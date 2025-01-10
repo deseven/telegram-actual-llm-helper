@@ -289,7 +289,7 @@ bot.on('message', async (ctx) => {
                 const transactionsText = accountTransactions.map(tx =>
                   `Account: ${tx.account}, Date: ${tx.date}, Amount: ${tx.amount}, Payee: ${tx.payee_name}, Category: ${tx.category}, Notes: ${tx.notes}`
                 ).join('\n');
-                logger.debug(`Importing transactions for account ${accountId}:\n${transactionsText}`);
+                logger.info(`Importing transactions for account ${accountId}:\n${transactionsText}`);
 
                 const result = await Actual.importTransactions(accountId, accountTransactions);
                 results.push(result);
