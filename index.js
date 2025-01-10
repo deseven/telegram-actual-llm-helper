@@ -50,7 +50,7 @@ Possible accounts: %ACCOUNTS_LIST%
 
 Possible categories: %CATEGORY_LIST%
 
-Possible payees: %PAYEE_LIST%
+Current payees: %PAYEE_LIST%
 
 There could be multiple entries, you need to process each and return a JSON array with the extracted information, for example:
 [
@@ -74,7 +74,8 @@ There could be multiple entries, you need to process each and return a JSON arra
   }
 ]
 
-If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
+Accounts and categories should be picked from the lists provided, payee could be picked from the list or it could be a new one.
+Remember that only the amount is required, everything else is optional. If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
 
 // -- Winston Logger --
 const logger = winston.createLogger({
@@ -263,7 +264,7 @@ bot.on('message', async (ctx) => {
                   account: account.id,
                   date: date,
                   amount: amount * 100 * -1, // Convert to cents and invert sign
-                  payee_name: payee ? payee.name : null,
+                  payee_name: tx.payee ? tx.payee : null,
                   category: category.id,
                   notes: `[TGBOT] ${tx.notes}`,
                 };
