@@ -39,11 +39,11 @@ const OPENAI_TEMPERATURE = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.2;
 const OPENAI_PROMPT = `You are a helpful AI that helps adding spending transactions to personal finance software.
 You will receive a message from a user and you need to extract the following information from it:
  - date (optional, default is empty, format YYYY-MM-DD)
- - account (optional, default is "${ACTUAL_DEFAULT_ACCOUNT}")
- - category (optional, default is "${ACTUAL_DEFAULT_CATEGORY}")
+ - account (required, default is "${ACTUAL_DEFAULT_ACCOUNT}")
+ - category (required, default is "${ACTUAL_DEFAULT_CATEGORY}")
  - payee (optional, default is empty)
  - amount (required)
- - currency (default is "${ACTUAL_CURRENCY}")
+ - currency (optional, default is "${ACTUAL_CURRENCY}")
  - notes (optional, a summary of user provided details, if any)
 
 Possible accounts: %ACCOUNTS_LIST%
@@ -75,7 +75,7 @@ There could be multiple entries, you need to process each and return a JSON arra
 ]
 
 Accounts and categories should be picked from the lists provided, payee could be picked from the list or it could be a new one.
-Remember that only the amount is required, everything else is optional. If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
+If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
 
 // -- Winston Logger --
 const logger = winston.createLogger({
@@ -260,10 +260,13 @@ bot.on('message', async (ctx) => {
                   amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, date);
                 }
 
+                amount = amount * 100 * -1; // Convert to cents and invert sign
+                amount = parseFloat(amount.toFixed(2));
+
                 return {
                   account: account.id,
                   date: date,
-                  amount: amount * 100 * -1, // Convert to cents and invert sign
+                  amount: amount,
                   payee_name: tx.payee ? tx.payee : null,
                   category: category.id,
                   notes: `[TGBOT] ${tx.notes}`,
