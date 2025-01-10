@@ -27,7 +27,7 @@ const ACTUAL_API_ENDPOINT = process.env.ACTUAL_API_ENDPOINT;
 const ACTUAL_PASSWORD = process.env.ACTUAL_PASSWORD;
 const ACTUAL_SYNC_ID = process.env.ACTUAL_SYNC_ID;
 const ACTUAL_DATA_DIR = process.env.ACTUAL_DATA_DIR || '/app/data';
-const ACTUAL_DEFAULT_CURRENCY = process.env.ACTUAL_DEFAULT_CURRENCY || 'EUR';
+const ACTUAL_CURRENCY = process.env.ACTUAL_CURRENCY || 'EUR';
 const ACTUAL_DEFAULT_ACCOUNT = process.env.ACTUAL_DEFAULT_ACCOUNT || 'Cash';
 const ACTUAL_DEFAULT_CATEGORY = process.env.ACTUAL_DEFAULT_CATEGORY || 'Food';
 
@@ -42,8 +42,9 @@ You will receive a message from a user and you need to extract the following inf
  - account (optional, default is "${ACTUAL_DEFAULT_ACCOUNT}")
  - category (optional, default is "${ACTUAL_DEFAULT_CATEGORY}")
  - payee (optional, default is empty)
- - sum (required)
- - currency (default is "${ACTUAL_DEFAULT_CURRENCY}")
+ - amount (required)
+ - currency (default is "${ACTUAL_CURRENCY}")
+ - notes (optional, a summary of user provided details, if any)
 
 Possible accounts: %ACCOUNTS_LIST%
 
@@ -58,20 +59,22 @@ There could be multiple entries, you need to process each and return a JSON arra
     "account": "Cash",
     "category": "Food",
     "payee": "Supermarket",
-    "sum": 12.34,
-    "currency": "EUR"
+    "amount": 12.34,
+    "currency": "EUR",
+    "notes": "Groceries for the week"
   },
   {
     "date": "",
     "account": "Cash",
     "category": "Restaurants",
     "payee": "Restaurant",
-    "sum": 56.78,
-    "currency": "USD"
+    "amount": 56.78,
+    "currency": "USD",
+    "notes": ""
   }
 ]
 
-If you can't extract the sum, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
+If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
 
 // -- Winston Logger --
 const logger = winston.createLogger({
@@ -108,9 +111,9 @@ const envSettings = {
   ACTUAL_API_ENDPOINT,
   ACTUAL_PASSWORD: obfuscate(ACTUAL_PASSWORD),
   ACTUAL_SYNC_ID,
+  ACTUAL_CURRENCY,
   ACTUAL_DEFAULT_ACCOUNT,
   ACTUAL_DEFAULT_CATEGORY,
-  ACTUAL_DEFAULT_CURRENCY,
   ACTUAL_DATA_DIR
 };
 logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings,{noColor: true})}`);
@@ -151,6 +154,27 @@ async function initActual() {
   }
 }
 
+// -- Currency Conversion --
+async function convertCurrency(amount, fromCurrency, toCurrency, apiDate) {
+  if (fromCurrency.toLowerCase() === toCurrency.toLowerCase()) {
+    return parseFloat(amount.toFixed(2)); // Round to 2 decimal places
+  }
+
+  const apiUrl = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${apiDate}/v1/currencies/${fromCurrency.toLowerCase()}.json`;
+  try {
+    const response = await axios.get(apiUrl);
+    const rates = response.data[fromCurrency.toLowerCase()];
+    if (!rates || !rates[toCurrency.toLowerCase()]) {
+      throw new Error(`Currency conversion rate not found for ${fromCurrency} to ${toCurrency}`);
+    }
+    const convertedAmount = amount * rates[toCurrency.toLowerCase()];
+    return parseFloat(convertedAmount.toFixed(2)); // Round to 2 decimal places
+  } catch (error) {
+    logger.error('Error converting currency:', error);
+    throw new Error('Failed to convert currency');
+  }
+}
+
 // -- Unified Message Handler --
 bot.on('message', async (ctx) => {
   const userId = ctx.from?.id;
@@ -174,7 +198,6 @@ bot.on('message', async (ctx) => {
           const categories = await Actual.getCategories();
           const accounts = await Actual.getAccounts();
           const payees = await Actual.getPayees();
-
           try {
             const openai = new OpenAI({
               apiKey: OPENAI_API_KEY,
@@ -201,7 +224,8 @@ bot.on('message', async (ctx) => {
               temperature: OPENAI_TEMPERATURE,
             });
 
-            const jsonResponse = response.choices[0].message.content;
+            // remove markdown around, just in case
+            const jsonResponse = response.choices[0].message.content.replace(/```(?:json)?\n?|\n?```/g, '').trim();
 
             // Log the full response
             logger.debug('=== OpenAI Response ===');
@@ -228,13 +252,20 @@ bot.on('message', async (ctx) => {
                   throw new Error('Invalid account or category');
                 }
 
+                // Convert currency if necessary
+                let amount = tx.amount;
+                let date = tx.date || new Date().toISOString().split('T')[0];
+                if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
+                  amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, date);
+                }
+
                 return {
                   account: account.id,
-                  date: tx.date || new Date().toISOString().split('T')[0],
-                  amount: tx.sum * 100 * -1, // Convert to cents and invert sign
+                  date: date,
+                  amount: amount * 100 * -1, // Convert to cents and invert sign
                   payee_name: payee ? payee.name : null,
                   category: category.id,
-                  notes: 'Actual bot import',
+                  notes: `[TGBOT] ${tx.notes}`,
                 };
               }));
 
