@@ -162,6 +162,7 @@ async function convertCurrency(amount, fromCurrency, toCurrency, apiDate) {
   }
 
   const apiUrl = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${apiDate}/v1/currencies/${fromCurrency.toLowerCase()}.json`;
+  logger.debug(`Fetching currency conversion from ${apiUrl}`);
   try {
     const response = await axios.get(apiUrl);
     const rates = response.data[fromCurrency.toLowerCase()];
@@ -256,8 +257,12 @@ bot.on('message', async (ctx) => {
                 // Convert currency if necessary
                 let amount = tx.amount;
                 let date = tx.date || new Date().toISOString().split('T')[0];
+                let apiDate = date;
+                if (date === new Date().toISOString().split('T')[0]) {
+                  apiDate = 'latest'; // due to tz differences, several hours every day the current day endpoint is not available
+                }
                 if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
-                  amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, date);
+                  amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
                 }
 
                 amount = amount * 100 * -1; // Convert to cents and invert sign
