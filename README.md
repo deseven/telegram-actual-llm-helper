@@ -1,8 +1,9 @@
 # telegram-actual-llm-helper
-A bot designed to assist with logging expenses in [Actual Budget](https://actualbudget.org), leveraging the capabilities of ChatGPT or other large language models (LLMs). Send your spendings to the bot in any form and they will magically appear as transactions in Actual Budget. Only text is supported ATM.
+A bot designed to assist with logging expenses in [Actual Budget](https://actualbudget.org), leveraging the capabilities of ChatGPT or other large language models (LLMs). Send your spendings to the bot in any form and they will magically appear as transactions in Actual Budget. The bot also automatically converts amounts to your default currency using relevant exchange rates (thanks to [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)).
 
 ## Requirements
  - Actual Budget (duh)
+ - access to any LLM with OpenAI-compatible API
  - any environment that can run node.js
  - 64MB of RAM
  - any reverse proxy web server that can handle SSL (for incoming messages webhook)
@@ -24,11 +25,14 @@ A bot designed to assist with logging expenses in [Actual Budget](https://actual
 
 ## Usage
 1. Send `/start` to the bot, it should answer with an introductory message.
-2. Type or paste any info about transactions you had. Almost anything should work, starting from a simple amount you spent and ending with complex messages (obviously depends on capabilities of the model you use). You can also mention multiple spendings in a single message.
+2. Type or paste any info about transactions you had. Almost anything should work, starting from a simple amount you spent and ending with complex messages (obviously depends on the capabilities of the model you use). You can also mention multiple spendings in a single message.
 
 ## Notes
- - default category and account you set in the .env file should actually exist in Actual Budget, the bot won't create them for you
- - all incoming spendings that have currency other than the one you set in the `.env` file will be converted to it using the exchange rates from [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)
+ - only text messages are supported at the moment, no attachments of any kind
+ - default category and account you set in the .env file should actually exist in Actual Budget, the bot won't create them for you (new payees will be created on the fly though)
  - on the `info` log level, bot outputs all user IDs of all incoming messages to stdout, in case you need a quick way to get them
  - `debug` level could also be useful if you want to track what exactly is being sent to the model and to the app
  - there's a `/health` endpoint that could be used for monitoring
+
+## Contributing
+Contributions are welcome! Feel free to open an issue or submit a pull request.
