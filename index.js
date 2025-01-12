@@ -201,23 +201,26 @@ bot.on('message', async (ctx) => {
           logger.debug(`Sending intro message to user ${userId}.`);
           return ctx.reply(INTRO.replace('%USER_ID%', userId));
         } else {
+          // Sync Actual data first
           await Actual.sync();
           const categories = await Actual.getCategories();
           const accounts = await Actual.getAccounts();
           const payees = await Actual.getPayees();
+
+          // Prepare the prompt with actual data
+          const prompt = OPENAI_PROMPT
+            .replace('%ACCOUNTS_LIST%', accounts.map(acc => acc.name).join(', '))
+            .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
+            .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
+
+          // 1) CALL THE LLM AND PARSE ITS RESPONSE
+          let parsedResponse = null; 
           try {
             const openai = new OpenAI({
               apiKey: OPENAI_API_KEY,
               baseURL: OPENAI_API_ENDPOINT,
             });
 
-            // Prepare the prompt with actual data
-            const prompt = OPENAI_PROMPT
-              .replace('%ACCOUNTS_LIST%', accounts.map(acc => acc.name).join(', '))
-              .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
-              .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
-
-            // Log debug information
             logger.debug('=== OpenAI Request Details ===');
             logger.debug('System Prompt:\n' + prompt);
             logger.debug(`User Message: ${trimmedText}`);
@@ -231,114 +234,132 @@ bot.on('message', async (ctx) => {
               temperature: OPENAI_TEMPERATURE,
             });
 
-            // remove markdown around, just in case
-            const jsonResponse = response.choices[0].message.content.replace(/```(?:json)?\n?|\n?```/g, '').trim();
+            // Remove possible Markdown fences
+            const jsonResponse = response.choices[0].message.content
+              .replace(/```(?:json)?\n?|\n?```/g, '')
+              .trim();
 
-            // Log the full response
             logger.debug('=== OpenAI Response ===');
             logger.debug(jsonResponse);
 
-            // Validate JSON response
-            try {
-              const parsedResponse = JSON.parse(jsonResponse);
-              if (!Array.isArray(parsedResponse)) {
-                throw new Error('Response is not an array');
-              }
+            parsedResponse = JSON.parse(jsonResponse);
 
-              if (parsedResponse.length === 0) {
-                return ctx.reply('Failed to find any information to create transactions. Try again?');
-              }
-
-              // Prepare transactions for Actual
-              const transactions = await Promise.all(parsedResponse.map(async (tx) => {
-                const account = accounts.find(acc => acc.name === tx.account) || accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT);
-                const category = categories.find(cat => cat.name === tx.category);
-                const payee = payees.find(p => p.name === tx.payee);
-
-                if (!account || !category) {
-                  throw new Error('Invalid account or category');
-                }
-
-                // Convert currency if necessary
-                let date = tx.date || new Date().toISOString().split('T')[0];
-                let apiDate = date;
-                let amount = tx.amount;
-                if (date === new Date().toISOString().split('T')[0]) {
-                  apiDate = 'latest'; // due to tz differences, several hours every day the current day endpoint is not available
-                }
-                if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
-                  amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
-                }
-
-                amount = amount * 100; // Convert to cents
-                amount = parseFloat(amount.toFixed(2));
-
-                return {
-                  account: account.id,
-                  date: date,
-                  amount: amount,
-                  payee_name: tx.payee ? tx.payee : null,
-                  category: category.id,
-                  notes: `[TGBOT] ${tx.notes}`,
-                };
-              }));
-
-              // Group transactions by account
-              const transactionsByAccount = transactions.reduce((acc, tx) => {
-                if (!acc[tx.account]) {
-                  acc[tx.account] = [];
-                }
-                acc[tx.account].push(tx);
-                return acc;
-              }, {});
-
-              // Import transactions to Actual, one account at a time
-              const results = [];
-              for (const [accountId, accountTransactions] of Object.entries(transactionsByAccount)) {
-                // Log transactions as text for debugging
-                const transactionsText = accountTransactions.map(tx =>
-                  `Account: ${tx.account}, Date: ${tx.date}, Amount: ${tx.amount}, Payee: ${tx.payee_name}, Category: ${tx.category}, Notes: ${tx.notes}`
-                ).join('\n');
-                logger.info(`Importing transactions for account ${accountId}:\n${transactionsText}`);
-
-                const result = await Actual.importTransactions(accountId, accountTransactions);
-                results.push(result);
-              }
-
-              // Summarize the results
-              let replyMessage = 'Transactions processed:\n';
-              const totalAdded = results.reduce((sum, result) => sum + (result.added?.length || 0), 0);
-              const totalUpdated = results.reduce((sum, result) => sum + (result.updated?.length || 0), 0);
-              const totalErrors = results.reduce((sum, result) => sum + (result.errors?.length || 0), 0);
-
-              if (totalAdded > 0) {
-                replyMessage += `- Added: ${totalAdded}\n`;
-              }
-              if (totalUpdated > 0) {
-                replyMessage += `- Updated: ${totalUpdated}\n`;
-              }
-              if (totalErrors > 0) {
-                replyMessage += `- Errors: ${totalErrors}\n`;
-              }
-              if (totalAdded === 0 && totalUpdated === 0 && totalErrors === 0) {
-                replyMessage += 'none';
-              } else {
-                await Actual.sync();
-              }
-              return ctx.reply(replyMessage);
-            } catch (parseError) {
-              logger.error('Error parsing OpenAI response:', parseError);
-              return ctx.reply('Sorry, I received an invalid response from the AI. Check the bot logs.');
+            if (!Array.isArray(parsedResponse)) {
+              throw new Error('AI response is not an array');
             }
-          } catch (error) {
-            logger.error('Error processing OpenAI request:', error);
-            if (error.response) {
-              logger.debug('OpenAI API Error Details:', {
-                status: error.response.status,
-                data: error.response.data
-              });
+
+            // If parsed array is empty, abort early
+            if (parsedResponse.length === 0) {
+              return ctx.reply('Failed to find any information to create transactions. Try again?');
             }
-            return ctx.reply('Sorry, I encountered an error processing your request. Check the bot logs.');
+
+          } catch (err) {
+            logger.error('Error obtaining/parsing OpenAI response:', err);
+            return ctx.reply('Sorry, I received an invalid or empty response from the AI. Check the bot logs.');
+          }
+
+          // 2) CREATE TRANSACTIONS IN ACTUAL
+          try {
+            // Prepare transactions for Actual
+            const transactions = await Promise.all(parsedResponse.map(async (tx) => {
+              // Find account or fall back to default
+              const account = accounts.find(acc => acc.name === tx.account)
+                || accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT);
+
+              // Find category
+              const category = categories.find(cat => cat.name === tx.category);
+
+              // Find payee, or leave it blank
+              const payee = payees.find(p => p.name === tx.payee);
+
+              if (!account) {
+                throw new Error(`Invalid account specified: "${tx.account}"`);
+              }
+              if (!category) {
+                throw new Error(`Invalid category specified: "${tx.category}"`);
+              }
+
+              // Convert currency if necessary
+              let date = tx.date || new Date().toISOString().split('T')[0];
+              let apiDate = date;
+              let amount = tx.amount;
+
+              // If date is today, currency API may not have today's data yet due to timezone differences
+              if (date === new Date().toISOString().split('T')[0]) {
+                apiDate = 'latest';
+              }
+
+              if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
+                amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
+              }
+
+              amount = parseFloat((amount * 100).toFixed(2)); // Convert to cents
+
+              return {
+                account: account.id,
+                date,
+                amount,
+                payee_name: tx.payee || null,
+                category: category.id,
+                notes: `[TGBOT] ${tx.notes || ''}`,
+              };
+            }));
+
+            // Group transactions by account
+            const transactionsByAccount = transactions.reduce((acc, tx) => {
+              if (!acc[tx.account]) {
+                acc[tx.account] = [];
+              }
+              acc[tx.account].push(tx);
+              return acc;
+            }, {});
+
+            const results = [];
+
+            // Import transactions to Actual, one account at a time
+            for (const [accountId, accountTxs] of Object.entries(transactionsByAccount)) {
+              const transactionsText = accountTxs.map(tx =>
+                `Account: ${tx.account}, Date: ${tx.date}, Amount: ${tx.amount}, Payee: ${tx.payee_name}, Category: ${tx.category}, Notes: ${tx.notes}`
+              ).join('\n');
+              logger.info(`Importing transactions for account ${accountId}:\n${transactionsText}`);
+
+              const result = await Actual.importTransactions(accountId, accountTxs);
+              results.push(result);
+            }
+
+            // Summarize the results
+            let replyMessage = 'Transactions processed:\n';
+            const totalAdded = results.reduce((sum, r) => sum + (r.added?.length || 0), 0);
+            const totalUpdated = results.reduce((sum, r) => sum + (r.updated?.length || 0), 0);
+            const totalErrors = results.reduce((sum, r) => sum + (r.errors?.length || 0), 0);
+
+            if (totalAdded > 0) {
+              replyMessage += `- Added: ${totalAdded}\n`;
+            }
+            if (totalUpdated > 0) {
+              replyMessage += `- Updated: ${totalUpdated}\n`;
+            }
+            if (totalErrors > 0) {
+              replyMessage += `- Errors: ${totalErrors}\n`;
+            }
+            if (totalAdded === 0 && totalUpdated === 0 && totalErrors === 0) {
+              replyMessage += 'none';
+            } else {
+              // Sync Actual after import
+              await Actual.sync();
+            }
+
+            return ctx.reply(replyMessage);
+
+          } catch (err) {
+            // Catch issues in transaction creation, currency conversion, etc.
+            logger.error('Error creating transactions in Actual Budget:', err);
+
+            if (err.message && err.message.includes('convert currency')) {
+              return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.');
+            }
+
+            return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.');
           }
         }
       } else {
