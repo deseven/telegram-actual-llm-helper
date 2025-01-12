@@ -1,5 +1,5 @@
 # telegram-actual-llm-helper
-A bot designed to assist with logging expenses in [Actual Budget](https://actualbudget.org), leveraging the capabilities of ChatGPT or other large language models (LLMs). Send your spendings to the bot in any form and they will magically appear as transactions in Actual Budget. The bot also automatically converts amounts to your default currency using relevant exchange rates (thanks to [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)).
+A bot designed to assist with logging expenses and deposits in [Actual Budget](https://actualbudget.org), leveraging the capabilities of ChatGPT or other large language models (LLMs). Send your transactions to the bot in any form and they will magically appear as expenses or deposits in Actual Budget. The bot also automatically converts amounts to your default currency using relevant exchange rates (thanks to [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)).
 
 ## Requirements
  - Actual Budget (duh)
@@ -25,7 +25,7 @@ A bot designed to assist with logging expenses in [Actual Budget](https://actual
 
 ## Usage
 1. Send `/start` to the bot, it should answer with an introductory message.
-2. Type or paste any info about transactions you had. Almost anything should work, starting from a simple amount you spent and ending with complex messages (obviously depends on the capabilities of the model you use). You can also mention multiple spendings in a single message.
+2. Type or paste any info about transactions you had, whether they are expenses or deposits. Almost anything should work, starting from a simple amount you spent or received and ending with complex messages (obviously depends on the capabilities of the model you use). You can also mention multiple transactions in a single message.
 
 ## Notes
  - only text messages are supported at the moment, no attachments of any kind
