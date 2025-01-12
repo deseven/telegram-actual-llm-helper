@@ -8,13 +8,14 @@ const OpenAI = require('openai');
 const prettyjson = require('prettyjson');
 const Actual = require('@actual-app/api');
 
-// -- Environment Variables --
+// -- Config --
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const USE_POLLING = process.env.USE_POLLING === 'true'; // Ensure boolean
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = parseInt(process.env.PORT,10) || 5005;
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
+const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 const INTRO_DEFAULT = `This is a private bot that helps with adding transactions to Actual Budget by using ChatGPT or other LLMs.
 
 You can set up your own instance, more info here:
@@ -139,6 +140,7 @@ const envSettings = {
   PORT,
   LOG_LEVEL,
   USER_IDS,
+  INPUT_API_KEY: obfuscate(INPUT_API_KEY),
   OPENAI_API_KEY: obfuscate(OPENAI_API_KEY),
   OPENAI_API_ENDPOINT,
   OPENAI_MODEL,
@@ -399,6 +401,48 @@ app.post('/webhook', (req, res) => {
   } catch (error) {
     logger.error('Error handling update:', error);
     res.sendStatus(500);
+  }
+});
+
+// EXPERIMENTAL: API endpoint for custom input outside Telegram
+app.post('/input', (req, res) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+
+    if (!apiKey || apiKey !== INPUT_API_KEY || !INPUT_API_KEY) {
+      return res.status(401).send('Unauthorized');
+    }
+
+    const { user_id, text } = req.body;
+    const now = Math.floor(Date.now() / 1000);
+    const update = {
+      update_id: now,
+      message: {
+        message_id: now,
+        from: {
+          id: user_id,
+          is_bot: false,
+          first_name: 'APIUser'
+        },
+        chat: {
+          id: user_id,
+          type: 'private'
+        },
+        date: now,
+        text
+      }
+    };
+
+    if (USER_IDS.includes(user_id)) {
+      bot.handleUpdate(update);
+      return res.json({ status: 'OK' });
+    } else {
+      return res.status(403).send('Forbidden');
+    }
+    
+  } catch (error) {
+    logger.error('Error handling manual message:', error);
+    return res.status(500).json({ error: 'Failed to handle message' });
   }
 });
 
