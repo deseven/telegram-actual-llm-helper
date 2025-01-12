@@ -36,13 +36,13 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_ENDPOINT = process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.2;
-const OPENAI_PROMPT = `You are a helpful AI that helps adding spending transactions to personal finance software.
+const OPENAI_PROMPT = `You are a helpful AI that helps adding transactions to personal finance software.
 You will receive a message from a user and you need to extract the following information from it:
  - date (optional, default is empty, format YYYY-MM-DD)
  - account (required, default is "${ACTUAL_DEFAULT_ACCOUNT}")
  - category (required, default is "${ACTUAL_DEFAULT_CATEGORY}")
  - payee (optional, default is empty)
- - amount (required)
+ - amount (required, could be positive or negative, depending on the context)
  - currency (optional, default is "${ACTUAL_CURRENCY}")
  - notes (optional, a summary of user provided details, if any)
 
@@ -59,23 +59,28 @@ There could be multiple entries, you need to process each and return a JSON arra
     "account": "Cash",
     "category": "Food",
     "payee": "Supermarket",
-    "amount": 12.34,
+    "amount": -12.34,
     "currency": "EUR",
     "notes": "Groceries for the week"
   },
   {
-    "date": "",
     "account": "Cash",
     "category": "Restaurants",
     "payee": "Restaurant",
-    "amount": 56.78,
-    "currency": "USD",
-    "notes": ""
+    "amount": -56.78,
+    "currency": "USD"
+  },
+  {
+    "account": "Cash",
+    "category": "Income",
+    "amount": 100.00,
+    "currency": "EUR",
+    "notes": "Debt from John"
   }
 ]
 
 Accounts and categories should be picked from the lists provided, payee could be picked from the list or it could be a new one.
-If you can't extract the amount, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
+If you can't extract any amounts, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
 
 // -- Winston Logger --
 const logger = winston.createLogger({
@@ -255,9 +260,9 @@ bot.on('message', async (ctx) => {
                 }
 
                 // Convert currency if necessary
-                let amount = tx.amount;
                 let date = tx.date || new Date().toISOString().split('T')[0];
                 let apiDate = date;
+                let amount = tx.amount;
                 if (date === new Date().toISOString().split('T')[0]) {
                   apiDate = 'latest'; // due to tz differences, several hours every day the current day endpoint is not available
                 }
@@ -265,7 +270,7 @@ bot.on('message', async (ctx) => {
                   amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
                 }
 
-                amount = amount * 100 * -1; // Convert to cents and invert sign
+                amount = amount * 100; // Convert to cents
                 amount = parseFloat(amount.toFixed(2));
 
                 return {
