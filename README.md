@@ -15,7 +15,7 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
 1. Create a new bot with [@BotFather](https://t.me/BotFather), copy bot token.
 2. Clone this repo or download the code archive.
 3. Copy `.env.example` to `.env` and edit it, follow the comments.
-4. Set up a reverse proxy so your webhook URL would actually be available via HTTPS.
+4. If you're not using polling, set up a reverse proxy so your webhook URL would actually be available via HTTPS.
 
 #### With docker compose (recommended)
 5. Run `docker compose up -d`.

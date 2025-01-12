@@ -10,6 +10,7 @@ const Actual = require('@actual-app/api');
 
 // -- Environment Variables --
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const USE_POLLING = process.env.USE_POLLING === 'true'; // Ensure boolean
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = parseInt(process.env.PORT,10) || 5005;
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
@@ -106,6 +107,7 @@ logger.info('Bot is starting up...');
 // -- Display settings on startup --
 const envSettings = {
   BOT_TOKEN: obfuscate(BOT_TOKEN),
+  USE_POLLING,
   WEBHOOK_URL,
   PORT,
   LOG_LEVEL,
@@ -126,9 +128,7 @@ logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings,{noColor:
 
 // Helper to obfuscate sensitive strings.
 function obfuscate(value) {
-  if (!value) return ''; // Return empty for missing/undefined
-  // Keep the first few characters and last few characters visible
-  // (adjust to your preference).
+  if (!value) return '';
   if (value.length <= 16) return '*'.repeat(value.length);
   return value.substring(0, 4) + '...' + value.substring(value.length - 4);
 }
@@ -139,20 +139,18 @@ const bot = new Telegraf(BOT_TOKEN);
 // -- Initialize Actual API --
 async function initActual() {
   try {
-    // Ensure the data directory exists
     if (!fs.existsSync(ACTUAL_DATA_DIR)) {
       logger.info(`Creating data directory: ${ACTUAL_DATA_DIR}`);
       fs.mkdirSync(ACTUAL_DATA_DIR, { recursive: true });
     }
 
-    // Initialize Actual API
     await Actual.init({
       dataDir: ACTUAL_DATA_DIR,
       serverURL: ACTUAL_API_ENDPOINT,
       password: ACTUAL_PASSWORD,
     });
 
-    // Download the budget
+    logger.debug('Downloading budget...');
     await Actual.downloadBudget(ACTUAL_SYNC_ID);
     logger.info('Successfully connected to Actual Budget.');
   } catch (error) {
@@ -163,7 +161,7 @@ async function initActual() {
 // -- Currency Conversion --
 async function convertCurrency(amount, fromCurrency, toCurrency, apiDate) {
   if (fromCurrency.toLowerCase() === toCurrency.toLowerCase()) {
-    return parseFloat(amount.toFixed(2)); // Round to 2 decimal places
+    return parseFloat(amount.toFixed(2));
   }
 
   const apiUrl = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${apiDate}/v1/currencies/${fromCurrency.toLowerCase()}.json`;
@@ -175,7 +173,7 @@ async function convertCurrency(amount, fromCurrency, toCurrency, apiDate) {
       throw new Error(`Currency conversion rate not found for ${fromCurrency} to ${toCurrency}`);
     }
     const convertedAmount = amount * rates[toCurrency.toLowerCase()];
-    return parseFloat(convertedAmount.toFixed(2)); // Round to 2 decimal places
+    return parseFloat(convertedAmount.toFixed(2));
   } catch (error) {
     logger.error('Error converting currency:', error);
     throw new Error('Failed to convert currency');
@@ -201,20 +199,18 @@ bot.on('message', async (ctx) => {
           logger.debug(`Sending intro message to user ${userId}.`);
           return ctx.reply(INTRO.replace('%USER_ID%', userId));
         } else {
-          // Sync Actual data first
           await Actual.sync();
           const categories = await Actual.getCategories();
           const accounts = await Actual.getAccounts();
           const payees = await Actual.getPayees();
 
-          // Prepare the prompt with actual data
           const prompt = OPENAI_PROMPT
             .replace('%ACCOUNTS_LIST%', accounts.map(acc => acc.name).join(', '))
             .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
             .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
 
           // 1) CALL THE LLM AND PARSE ITS RESPONSE
-          let parsedResponse = null; 
+          let parsedResponse = null;
           try {
             const openai = new OpenAI({
               apiKey: OPENAI_API_KEY,
@@ -248,11 +244,9 @@ bot.on('message', async (ctx) => {
               throw new Error('AI response is not an array');
             }
 
-            // If parsed array is empty, abort early
             if (parsedResponse.length === 0) {
               return ctx.reply('Failed to find any information to create transactions. Try again?');
             }
-
           } catch (err) {
             logger.error('Error obtaining/parsing OpenAI response:', err);
             return ctx.reply('Sorry, I received an invalid or empty response from the AI. Check the bot logs.');
@@ -260,16 +254,11 @@ bot.on('message', async (ctx) => {
 
           // 2) CREATE TRANSACTIONS IN ACTUAL
           try {
-            // Prepare transactions for Actual
             const transactions = await Promise.all(parsedResponse.map(async (tx) => {
-              // Find account or fall back to default
               const account = accounts.find(acc => acc.name === tx.account)
                 || accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT);
 
-              // Find category
               const category = categories.find(cat => cat.name === tx.category);
-
-              // Find payee, or leave it blank
               const payee = payees.find(p => p.name === tx.payee);
 
               if (!account) {
@@ -279,7 +268,6 @@ bot.on('message', async (ctx) => {
                 throw new Error(`Invalid category specified: "${tx.category}"`);
               }
 
-              // Convert currency if necessary
               let date = tx.date || new Date().toISOString().split('T')[0];
               let apiDate = date;
               let amount = tx.amount;
@@ -316,7 +304,6 @@ bot.on('message', async (ctx) => {
 
             const results = [];
 
-            // Import transactions to Actual, one account at a time
             for (const [accountId, accountTxs] of Object.entries(transactionsByAccount)) {
               const transactionsText = accountTxs.map(tx =>
                 `Account: ${tx.account}, Date: ${tx.date}, Amount: ${tx.amount}, Payee: ${tx.payee_name}, Category: ${tx.category}, Notes: ${tx.notes}`
@@ -327,38 +314,28 @@ bot.on('message', async (ctx) => {
               results.push(result);
             }
 
-            // Summarize the results
             let replyMessage = 'Transactions processed:\n';
             const totalAdded = results.reduce((sum, r) => sum + (r.added?.length || 0), 0);
             const totalUpdated = results.reduce((sum, r) => sum + (r.updated?.length || 0), 0);
             const totalErrors = results.reduce((sum, r) => sum + (r.errors?.length || 0), 0);
 
-            if (totalAdded > 0) {
-              replyMessage += `- Added: ${totalAdded}\n`;
-            }
-            if (totalUpdated > 0) {
-              replyMessage += `- Updated: ${totalUpdated}\n`;
-            }
-            if (totalErrors > 0) {
-              replyMessage += `- Errors: ${totalErrors}\n`;
-            }
+            if (totalAdded > 0) replyMessage += `- Added: ${totalAdded}\n`;
+            if (totalUpdated > 0) replyMessage += `- Updated: ${totalUpdated}\n`;
+            if (totalErrors > 0) replyMessage += `- Errors: ${totalErrors}\n`;
             if (totalAdded === 0 && totalUpdated === 0 && totalErrors === 0) {
               replyMessage += 'none';
             } else {
-              // Sync Actual after import
               await Actual.sync();
             }
 
             return ctx.reply(replyMessage);
 
           } catch (err) {
-            // Catch issues in transaction creation, currency conversion, etc.
             logger.error('Error creating transactions in Actual Budget:', err);
 
             if (err.message && err.message.includes('convert currency')) {
               return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.');
             }
-
             return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.');
           }
         }
@@ -384,20 +361,10 @@ bot.catch((err, ctx) => {
   logger.error('Global Telegraf error:', err);
 });
 
-// -- Setup Express Webhook --
+// Create Express app
 const app = express();
 app.use(express.json());
 
-// Set the webhook on startup
-bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`)
-  .then(() => {
-    logger.debug(`Webhook set: ${WEBHOOK_URL}/webhook`);
-  })
-  .catch((err) => {
-    logger.error('Error setting webhook:', err);
-  });
-
-// Define the webhook endpoint
 app.post('/webhook', (req, res) => {
   try {
     bot.handleUpdate(req.body);
@@ -408,13 +375,47 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
   res.send('OK');
 });
 
-// -- Start the server --
+// Start the server
 app.listen(PORT, () => {
-  initActual();
-  logger.info(`Bot started successfully!`);
+  startBot().catch(err => {
+    logger.error('Error starting bot:', err);
+    process.exit(3);
+  });
 });
+
+async function startBot() {
+  await initActual();
+
+  if (USE_POLLING) {
+    logger.debug('Attempting to delete any existing webhook before polling...');
+    try {
+      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+      logger.debug('Webhook deleted successfully');
+    } catch (err) {
+      logger.warn(`deleteWebhook failed: ${err}`);
+    }
+
+    try {
+      bot.launch();
+      logger.debug('Polling enabled!');
+    } catch (err) {
+      logger.error('Error launching bot with polling:', err);
+      process.exit(3);
+    }
+  } else {
+    logger.debug('Setting webhook...');
+    try {
+      await bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`);
+      logger.debug(`Webhook set: ${WEBHOOK_URL}/webhook`);
+    } catch (err) {
+      logger.error('Error setting webhook:', err);
+      process.exit(3);
+    }
+  }
+
+  logger.info('Bot started successfully!');
+}
