@@ -8,7 +8,6 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
  - access to any LLM with OpenAI-compatible API
  - any environment that can run node.js
  - 64MB of RAM
- - any reverse proxy web server that can handle SSL (for incoming messages webhook)
 
 ## Installation
 #### Prerequisites
