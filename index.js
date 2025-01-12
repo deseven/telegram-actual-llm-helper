@@ -14,7 +14,7 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = parseInt(process.env.PORT,10) || 5005;
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
-const INTRO_DEFAULT = `Hello! This is a private bot that helps with adding spendings to Actual Budget by using ChatGPT or other LLMs.
+const INTRO_DEFAULT = `This is a private bot that helps with adding transactions to Actual Budget by using ChatGPT or other LLMs.
 
 You can set up your own instance, more info here:
 https://github.com/deseven/telegram-actual-llm-helper
