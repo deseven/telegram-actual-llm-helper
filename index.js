@@ -37,23 +37,53 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_ENDPOINT = process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.2;
-const OPENAI_PROMPT = `You are a helpful AI that helps adding transactions to personal finance software.
-You will receive a message from a user and you need to extract the following information from it:
- - date (optional, default is empty, format YYYY-MM-DD)
- - account (required, default is "${ACTUAL_DEFAULT_ACCOUNT}")
- - category (required, default is "${ACTUAL_DEFAULT_CATEGORY}")
- - payee (optional, default is empty)
- - amount (required, could be positive or negative, depending on the context)
- - currency (optional, default is "${ACTUAL_CURRENCY}")
- - notes (optional, a summary of user provided details, if any)
+const OPENAI_PROMPT = `You are a helpful AI that assists in adding transactions to personal finance software.
 
-Possible accounts: %ACCOUNTS_LIST%
+Today is ${new Date().toISOString().split('T')[0]}.
 
-Possible categories: %CATEGORY_LIST%
+You will receive a message from a user containing one or more potential transactions. For each transaction, extract:
+- date (optional; if provided, use YYYY-MM-DD format; otherwise leave empty)
+- account (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_ACCOUNT}")
+- category (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_CATEGORY}")
+- payee (optional; if not mentioned, leave empty)
+- amount (required, numeric, positive or negative; if absent, skip that transaction)
+- currency (optional; if not mentioned, default to "${ACTUAL_CURRENCY}")
+- notes (optional; brief summary of the user’s message about that transaction)
 
-Current payees: %PAYEE_LIST%
+Use these lists to match accounts, categories, and payees:
+- Possible accounts: %ACCOUNTS_LIST%
+- Possible categories: %CATEGORY_LIST%
+- Current payees: %PAYEE_LIST%
 
-There could be multiple entries, you need to process each and return a JSON array with the extracted information, for example:
+Matching rules:
+1. If the user’s text closely resembles an item in the list, use that.
+2. If no match is found for account/category, use the defaults.
+3. If no match is found for payee, treat it as a new payee.
+
+Additional rules:
+- The output should be a JSON array with one object per transaction.
+- If the user mentions an amount without specifying sign, you can infer from context or assume negative.
+- If you cannot extract an amount, skip that transaction.
+- If there are no valid transactions, return an empty array.
+
+**Important**: Output must be valid JSON only—no extra text, explanations, or markdown.
+
+Example output with no transactions:
+[]
+
+Example output with one transaction:
+[
+  {
+    "date": "2023-01-01",
+    "account": "Cash",
+    "category": "Food",
+    "amount": -12.34,
+    "currency": "EUR",
+    "notes": "Groceries for the week"
+  }
+]
+
+Example output with multiple transactions:
 [
   {
     "date": "2023-01-01",
@@ -78,10 +108,7 @@ There could be multiple entries, you need to process each and return a JSON arra
     "currency": "EUR",
     "notes": "Debt from John"
   }
-]
-
-Accounts and categories should be picked from the lists provided, payee could be picked from the list or it could be a new one.
-If you can't extract any amounts, return an empty array. Never add any comments or explanations, return only JSON without any markdown formatting.`;
+]`;
 
 // -- Winston Logger --
 const logger = winston.createLogger({
