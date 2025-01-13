@@ -155,6 +155,10 @@ const envSettings = {
 };
 logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings,{noColor: true})}`);
 
+if (INPUT_API_KEY.length < 16) {
+  logger.warn('For security reasons INPUT_API_KEY must be at least 16 characters long, /input will be disabled.');
+}
+
 // Helper to obfuscate sensitive strings.
 function obfuscate(value) {
   if (!value) return '';
@@ -246,7 +250,7 @@ bot.on('message', async (ctx) => {
               baseURL: OPENAI_API_ENDPOINT,
             });
 
-            logger.debug('=== OpenAI Request Details ===');
+            logger.debug('=== LLM Request Details ===');
             logger.debug('System Prompt:\n' + prompt);
             logger.debug(`User Message: ${trimmedText}`);
 
@@ -264,25 +268,27 @@ bot.on('message', async (ctx) => {
               .replace(/```(?:json)?\n?|\n?```/g, '')
               .trim();
 
-            logger.debug('=== OpenAI Response ===');
+            logger.debug('=== LLM Response ===');
             logger.debug(jsonResponse);
 
             parsedResponse = JSON.parse(jsonResponse);
 
             if (!Array.isArray(parsedResponse)) {
-              throw new Error('AI response is not an array');
+              throw new Error('LLM response is not an array');
             }
 
             if (parsedResponse.length === 0) {
               return ctx.reply('Failed to find any information to create transactions. Try again?');
             }
           } catch (err) {
-            logger.error('Error obtaining/parsing OpenAI response:', err);
-            return ctx.reply('Sorry, I received an invalid or empty response from the AI. Check the bot logs.');
+            logger.error('Error obtaining/parsing LLM response:', err);
+            return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.');
           }
 
           // 2) CREATE TRANSACTIONS IN ACTUAL
           try {
+            let replyMessage = '*[TRANSACTIONS]*\n';
+            let txInfo = {};
             const transactions = await Promise.all(parsedResponse.map(async (tx) => {
               const account = accounts.find(acc => acc.name === tx.account)
                 || accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT);
@@ -310,8 +316,27 @@ bot.on('message', async (ctx) => {
                 amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
               }
 
-              amount = parseFloat((amount * 100).toFixed(2)); // Convert to cents
+              // Provide human-readable output of processed transaction data
+              replyMessage += '```\n';
+              let humanAmount = `${tx.amount} ${tx.currency}`;
+              let humanConvertedAmount = '';
+              if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
+                humanConvertedAmount = `${amount} ${ACTUAL_CURRENCY}`;
+              }
 
+              txInfo = {
+                date,
+                account: account.name,
+                category: category.name,
+                ...(humanAmount && { amount: humanAmount }),
+                ...(humanConvertedAmount && { converted: humanConvertedAmount }),
+                ...(tx.payee && { payee: tx.payee }),
+                ...(tx.notes && { notes: tx.notes })
+              };
+              replyMessage += prettyjson.render(txInfo,{noColor: true});
+              replyMessage += '```\n';
+
+              amount = parseFloat((amount * 100).toFixed(2)); // Convert to cents
               return {
                 account: account.id,
                 date,
@@ -343,7 +368,7 @@ bot.on('message', async (ctx) => {
               results.push(result);
             }
 
-            let replyMessage = 'Transactions processed:\n';
+            replyMessage += '\n*[ACTUAL]*\n';
             const totalAdded = results.reduce((sum, r) => sum + (r.added?.length || 0), 0);
             const totalUpdated = results.reduce((sum, r) => sum + (r.updated?.length || 0), 0);
             const totalErrors = results.reduce((sum, r) => sum + (r.errors?.length || 0), 0);
@@ -352,12 +377,12 @@ bot.on('message', async (ctx) => {
             if (totalUpdated > 0) replyMessage += `- Updated: ${totalUpdated}\n`;
             if (totalErrors > 0) replyMessage += `- Errors: ${totalErrors}\n`;
             if (totalAdded === 0 && totalUpdated === 0 && totalErrors === 0) {
-              replyMessage += 'none';
+              replyMessage += 'no changes';
             } else {
               await Actual.sync();
             }
 
-            return ctx.reply(replyMessage);
+            return ctx.reply(replyMessage, { parse_mode: 'Markdown' });
 
           } catch (err) {
             logger.error('Error creating transactions in Actual Budget:', err);
@@ -409,7 +434,7 @@ app.post('/input', (req, res) => {
   try {
     const apiKey = req.headers['x-api-key'];
 
-    if (!apiKey || apiKey !== INPUT_API_KEY || !INPUT_API_KEY) {
+    if (!apiKey || apiKey !== INPUT_API_KEY || !INPUT_API_KEY || INPUT_API_KEY.length < 16) {
       return res.status(401).send('Unauthorized');
     }
 
