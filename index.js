@@ -49,7 +49,7 @@ You will receive a message from a user containing one or more potential transact
 - payee (optional; if not mentioned, leave empty)
 - amount (required, numeric, positive or negative; if absent, skip that transaction)
 - currency (optional; if not mentioned, default to "${ACTUAL_CURRENCY}")
-- notes (optional; brief summary of the user’s message about that transaction)
+- notes (optional; a note about that transaction if there is additional context not fit for other fields)
 
 Use these lists to match accounts, categories, and payees:
 - Possible accounts: %ACCOUNTS_LIST%
@@ -57,7 +57,7 @@ Use these lists to match accounts, categories, and payees:
 - Current payees: %PAYEE_LIST%
 
 Matching rules:
-1. If the user’s text closely resembles an item in the list, use that.
+1. If the user's text closely resembles an item in the list, use that.
 2. If no match is found for account/category, use the defaults.
 3. If no match is found for payee, treat it as a new payee.
 
