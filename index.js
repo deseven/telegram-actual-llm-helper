@@ -7,7 +7,7 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const prettyjson = require('prettyjson');
 const Actual = require('@actual-app/api');
-const { obfuscate, validateAndTrimUrl } = require('./helpers');
+const h = require('./helpers');
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 
@@ -33,14 +33,13 @@ console.debug = (...args) => logger.debug(args.join(' '));
 // -- Config --
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const USE_POLLING = process.env.USE_POLLING === 'true';
-const BASE_URL = (() => {
-    try {
-        return validateAndTrimUrl(process.env.BASE_URL);
-    } catch (err) {
-        logger.error('Error setting up BASE_URL. ' + err);
+let BASE_URL = '';
+if (!USE_POLLING) {
+    BASE_URL = h.validateAndTrimUrl(process.env.BASE_URL) || (() => {
+        logger.error('Invalid or missing BASE_URL. Provide a correct URL in the .env file or set USE_POLLING to true.');
         process.exit(1);
-    }
-})();
+    })();
+}
 const PORT = parseInt(process.env.PORT, 10) || 5005;
 const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
 const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
@@ -87,20 +86,20 @@ logger.info('Bot is starting up...');
 
 // -- Display settings on startup --
 const envSettings = {
-    BOT_TOKEN: obfuscate(BOT_TOKEN),
+    BOT_TOKEN: h.obfuscate(BOT_TOKEN),
     USE_POLLING,
     BASE_URL,
     PORT,
     LOG_LEVEL,
     USER_IDS,
-    INPUT_API_KEY: obfuscate(INPUT_API_KEY),
-    OPENAI_API_KEY: obfuscate(OPENAI_API_KEY),
+    INPUT_API_KEY: h.obfuscate(INPUT_API_KEY),
+    OPENAI_API_KEY: h.obfuscate(OPENAI_API_KEY),
     OPENAI_API_ENDPOINT,
     OPENAI_MODEL,
     OPENAI_TEMPERATURE,
     OPENAI_PROMPT_PATH,
     ACTUAL_API_ENDPOINT,
-    ACTUAL_PASSWORD: obfuscate(ACTUAL_PASSWORD),
+    ACTUAL_PASSWORD: h.obfuscate(ACTUAL_PASSWORD),
     ACTUAL_SYNC_ID,
     ACTUAL_CURRENCY,
     ACTUAL_DEFAULT_ACCOUNT,
@@ -200,7 +199,6 @@ bot.on('message', async (ctx) => {
         if (chatType === 'private') {
             if (USER_IDS.includes(userId)) {
                 if (trimmedText == '/start' || trimmedText == '/help') {
-                    logger.info(`Received "${trimmedText}" from user ${userId} in private chat.`);
                     logger.debug(`Sending intro message to user ${userId}.`);
                     return ctx.reply(INTRO.replace('%USER_ID%', userId));
                 } else {
@@ -408,49 +406,39 @@ app.post('/webhook', (req, res) => {
     }
 });
 
-// EXPERIMENTAL: API endpoint for custom input outside Telegram
+// API endpoint for custom input outside Telegram
 app.post('/input', (req, res) => {
+    const userAgent = req.headers['user-agent'];
+    const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || req.socket.remoteAddress;
+    logger.debug(`Custom input request received [IP: ${ip}, User-Agent: ${userAgent}]`);
     try {
         const apiKey = req.headers['x-api-key'];
 
         if (!apiKey || apiKey !== INPUT_API_KEY || !INPUT_API_KEY || INPUT_API_KEY.length < 16) {
+            logger.debug('Custom input request denied: invalid API key');
             return res.status(401).send('Unauthorized');
         }
 
         const { user_id, text } = req.body;
-        const now = Math.floor(Date.now() / 1000);
-        const update = {
-            update_id: now,
-            message: {
-                message_id: now,
-                from: {
-                    id: user_id,
-                    is_bot: false,
-                    first_name: 'APIUser'
-                },
-                chat: {
-                    id: user_id,
-                    type: 'private'
-                },
-                date: now,
-                text
-            }
-        };
 
         if (USER_IDS.includes(user_id)) {
-            bot.handleUpdate(update);
+            bot.handleUpdate(h.createUpdateObject(user_id, text));
+            logger.debug('Custom input request handled successfully.');
             return res.json({ status: 'OK' });
         } else {
+            logger.debug('Custom input request denied: invalid user ID');
             return res.status(403).send('Forbidden');
         }
 
     } catch (error) {
-        logger.error('Error handling manual message:', error);
+        logger.error('Error handling custom input request. ', error);
         return res.status(500).json({ error: 'Failed to handle message' });
     }
 });
 
+// Health check endpoint
 app.get('/health', (req, res) => {
+    logger.debug('Health ping.');
     res.send('OK');
 });
 
