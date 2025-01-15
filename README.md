@@ -1,7 +1,7 @@
 # telegram-actual-llm-helper
 A bot designed to assist with logging expenses and deposits in [Actual Budget](https://actualbudget.org), leveraging the capabilities of ChatGPT or other large language models (LLMs). Send your transactions to the bot in any form and they will magically appear as expenses or deposits in Actual Budget. The bot also automatically converts amounts to your default currency using relevant exchange rates (thanks to [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)).
 
-**Showcase Video:** [Watch the demo here](https://d7.wtf/s/telegram-actual-llm-helper.mp4)
+**Showcase Video:** [watch here](https://d7.wtf/s/telegram-actual-llm-helper.mp4) (a bit outdated, but reflects the general idea)
 
 ## Requirements
  - Actual Budget (duh)
@@ -24,6 +24,9 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
 6. Run `npm i`.
 7. Run `npm run start`.
 
+#### Tests (optional, would only work if you have `BASE_URL` and `INPUT_API_KEY` set up)
+8. Run `./run-tests.sh`.
+
 ## Usage
 #### General
 1. Send `/start` to the bot, it should answer with an introductory message.
@@ -36,8 +39,8 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
  - `debug` level could also be useful if you want to track what exactly is being sent to the model and to the app
  - there's a `/health` endpoint that could be used for monitoring
 
-#### Custom Input [experimental]
-If you uncomment and set `INPUT_API_KEY` in the `.env` file, you'll be able to send messages from outside of Telegram by sending POST requests to `/input` endpoint. Here's a curl example:
+#### Custom Input
+If you uncomment and set `INPUT_API_KEY` in the `.env` file, you'll be able to send messages from outside of Telegram by sending POST requests to `/input` endpoint. This also requires setting `BASE_URL`. Here's a curl example:
 ```sh
 curl -X POST \
   -H "Content-Type: application/json" \

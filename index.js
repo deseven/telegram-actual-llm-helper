@@ -10,8 +10,29 @@ const Actual = require('@actual-app/api');
 
 // -- Config --
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const USE_POLLING = process.env.USE_POLLING === 'true'; // Ensure boolean
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const USE_POLLING = process.env.USE_POLLING === 'true';
+const BASE_URL = (() => {
+  const url = process.env.BASE_URL;
+
+  if (!url) {
+    throw new Error('BASE_URL environment variable is not set.');
+  }
+
+  // Strip trailing slashes
+  const trimmedUrl = url.replace(/\/+$/, '');
+
+  // Validate URL format
+  try {
+    const parsedUrl = new URL(trimmedUrl);
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('BASE_URL must start with https://');
+    }
+  } catch (error) {
+    throw new Error(`Invalid BASE_URL: ${error.message}`);
+  }
+
+  return trimmedUrl;
+})();
 const PORT = parseInt(process.env.PORT,10) || 5005;
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
@@ -34,7 +55,7 @@ const ACTUAL_DEFAULT_ACCOUNT = process.env.ACTUAL_DEFAULT_ACCOUNT || 'Cash';
 const ACTUAL_DEFAULT_CATEGORY = process.env.ACTUAL_DEFAULT_CATEGORY || 'Food';
 const ACTUAL_NOTE_PREFIX = process.env.ACTUAL_NOTE_PREFIX || '🤖';
 
-// -- ChatGPT --
+// -- LLM --
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_ENDPOINT = process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -136,7 +157,7 @@ logger.info('Bot is starting up...');
 const envSettings = {
   BOT_TOKEN: obfuscate(BOT_TOKEN),
   USE_POLLING,
-  WEBHOOK_URL,
+  BASE_URL,
   PORT,
   LOG_LEVEL,
   USER_IDS,
@@ -524,8 +545,8 @@ async function startBot() {
   } else {
     logger.debug('Setting webhook...');
     try {
-      await bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`);
-      logger.debug(`Webhook set: ${WEBHOOK_URL}/webhook`);
+      await bot.telegram.setWebhook(`${BASE_URL}/webhook`);
+      logger.debug(`Webhook set: ${BASE_URL}/webhook`);
     } catch (err) {
       logger.error('Error setting webhook:', err);
       process.exit(1);
