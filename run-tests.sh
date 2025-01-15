@@ -13,6 +13,10 @@ input_request() {
     local FIRST_USER_ID=$(echo $USER_IDS | cut -d ',' -f 1)
     local TEXT=$(printf "%s\\\\n" "$@")
     TEXT="${TEXT%\\n}"  # Remove the trailing newline
+
+    # Fallback to 127.0.0.1:$PORT if BASE_URL is empty
+    BASE_URL=${BASE_URL:-"http://127.0.0.1:$PORT"}
+
     curl -X POST \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $INPUT_API_KEY" \

@@ -24,8 +24,8 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
 6. Run `npm i`.
 7. Run `npm run start`.
 
-#### Tests (optional, would only work if you have `BASE_URL` and `INPUT_API_KEY` set up)
-8. Run `./run-tests.sh`.
+#### Tests (optional, would only work if you have `INPUT_API_KEY` set up)
+8. Run `./run-tests.sh`, check the script's contents to see what it does.
 
 ## Usage
 #### General
@@ -40,7 +40,7 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
  - there's a `/health` endpoint that could be used for monitoring
 
 #### Custom Input
-If you uncomment and set `INPUT_API_KEY` in the `.env` file, you'll be able to send messages from outside of Telegram by sending POST requests to `/input` endpoint. This also requires setting `BASE_URL`. Here's a curl example:
+If you uncomment and set `INPUT_API_KEY` in the `.env` file, you'll be able to send messages from outside of Telegram by sending POST requests to `/input` endpoint. Here's a curl example:
 ```sh
 curl -X POST \
   -H "Content-Type: application/json" \
