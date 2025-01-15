@@ -1,3 +1,4 @@
+const { exitOnError } = require('winston');
 const {
     logger, config, helpers,
     convertCurrency, prettyjson,
@@ -12,9 +13,14 @@ let Actual = InitActual();
 let Bot = InitBot();
 LaunchBot(Bot);
 
-App.listen(config.PORT, () => {
-    logger.info(`Server is running on port ${config.PORT}`);
-});
+try {
+    App.listen(config.PORT, () => {
+        logger.info(`Susccessfully started server on port ${config.PORT}.`);
+    });
+} catch (err) {
+    logger.error(`Failed to start server: ${err}`);
+    process.exit(1);
+}
 
 // -- Unified Message Handler --
 Bot.on('message', async (ctx) => {
