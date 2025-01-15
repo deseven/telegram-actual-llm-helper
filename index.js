@@ -7,34 +7,41 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const prettyjson = require('prettyjson');
 const Actual = require('@actual-app/api');
+const { obfuscate, validateAndTrimUrl } = require('./helpers');
+
+const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
+
+// -- Winston Logger --
+const logger = winston.createLogger({
+  level: LOG_LEVEL,
+  format: winston.format.combine(
+    winston.format.colorize(),
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.align(),
+    winston.format.printf(({ timestamp, level, message }) => `[${timestamp}] [${level}]: ${message}`)
+  ),
+  transports: [new winston.transports.Console()]
+});
+
+// Override console methods to use Winston logger
+console.log = (...args) => logger.debug(args.join(' '));
+console.info = (...args) => logger.info(args.join(' '));
+console.warn = (...args) => logger.warn(args.join(' '));
+console.error = (...args) => logger.error(args.join(' '));
+console.debug = (...args) => logger.debug(args.join(' '));
 
 // -- Config --
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const USE_POLLING = process.env.USE_POLLING === 'true';
 const BASE_URL = (() => {
-  const url = process.env.BASE_URL;
-
-  if (!url) {
-    throw new Error('BASE_URL environment variable is not set.');
-  }
-
-  // Strip trailing slashes
-  const trimmedUrl = url.replace(/\/+$/, '');
-
-  // Validate URL format
   try {
-    const parsedUrl = new URL(trimmedUrl);
-    if (parsedUrl.protocol !== 'https:') {
-      throw new Error('BASE_URL must start with https://');
-    }
-  } catch (error) {
-    throw new Error(`Invalid BASE_URL: ${error.message}`);
+    return validateAndTrimUrl(process.env.BASE_URL);
+  } catch (err) {
+    logger.error('Error setting up BASE_URL. ' + err);
+    process.exit(1);
   }
-
-  return trimmedUrl;
 })();
-const PORT = parseInt(process.env.PORT,10) || 5005;
-const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
+const PORT = parseInt(process.env.PORT, 10) || 5005;
 const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
 const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 const INTRO_DEFAULT = `This is a private bot that helps with adding transactions to Actual Budget by using ChatGPT or other LLMs.
@@ -60,98 +67,23 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_ENDPOINT = process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.2;
-const OPENAI_PROMPT = `You are a helpful AI that assists in adding transactions to personal finance software.
-
-Today is ${new Date().toISOString().split('T')[0]}.
-
-You will receive a message from a user containing one or more potential transactions. For each transaction, extract:
-- date (optional; if provided, use YYYY-MM-DD format; otherwise leave empty)
-- account (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_ACCOUNT}")
-- category (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_CATEGORY}")
-- payee (optional; from the list of payees or a new one)
-- amount (required, positive or negative; if absent, skip that transaction)
-- currency (optional; for example EUR or USD)
-- exchange_rate (optional; makes sense only if currency is present)
-- notes (optional; a note about that transaction if there is additional context not fit for other fields)
-
-Use these lists to match accounts, categories, and payees:
-- Possible accounts: %ACCOUNTS_LIST%
-- Possible categories: %CATEGORY_LIST%
-- Current payees: %PAYEE_LIST%
-
-Matching rules:
-1. If the user's text closely resembles an item in the list, use that.
-2. If no match is found for account/category, use the defaults.
-3. If no match is found for payee, a new payee could be defined.
-
-Additional rules:
-- The output should be a JSON array with one object per transaction.
-- If the user mentions an amount without specifying sign, you can infer from context or assume negative.
-- If you cannot extract an amount, skip that transaction.
-- If there are no valid transactions, return an empty array.
-
-**Important**: Output must be valid JSON only—no extra text, explanations, or markdown.
-
-Example output with no transactions:
-[]
-
-Example output with one transaction:
-[
-  {
-    "date": "2023-01-01",
-    "account": "Cash",
-    "category": "Food",
-    "amount": -12.34,
-    "notes": "Groceries for the week"
-  }
-]
-
-Example output with multiple transactions:
-[
-  {
-    "date": "2023-01-01",
-    "account": "Cash",
-    "category": "Food",
-    "payee": "Lidl",
-    "amount": -12.34
-    "notes": "Groceries for the week"
-  },
-  {
-    "account": "Cash",
-    "category": "Restaurants",
-    "payee": "McDonalds",
-    "amount": -56.78,
-    "currency": "USD",
-    "exchange_rate": 1.1,
-    "notes": "Dinner with friends"
-  },
-  {
-    "account": "Cash",
-    "category": "Income",
-    "amount": 1000.00
-  }
-]`;
-
-// -- Winston Logger --
-const logger = winston.createLogger({
-  level: LOG_LEVEL,
-  format: winston.format.combine(
-    winston.format.colorize(),
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    winston.format.align(),
-    winston.format.printf(({ timestamp, level, message }) => `[${timestamp}] [${level}]: ${message}`)
-  ),
-  transports: [new winston.transports.Console()]
-});
-
-// Override console methods to use Winston logger
-console.log = (...args) => logger.debug(args.join(' '));
-console.info = (...args) => logger.info(args.join(' '));
-console.warn = (...args) => logger.warn(args.join(' '));
-console.error = (...args) => logger.error(args.join(' '));
-console.debug = (...args) => logger.debug(args.join(' '));
+let OPENAI_PROMPT_PATH = './default.prompt';
+let OPENAI_PROMPT = '';
 
 logger.info('Bot is starting up...');
+
+// -- Custom prompt handling --
+(() => {
+  const custom = './custom.prompt';
+  try {
+    if (fs.existsSync(custom) && fs.statSync(custom).size > 0) {
+      OPENAI_PROMPT_PATH = custom;
+    }
+  } catch (error) {
+    logger.error('Error loading prompt file. ', error);
+    process.exit(1);
+  }
+})();
 
 // -- Display settings on startup --
 const envSettings = {
@@ -166,6 +98,7 @@ const envSettings = {
   OPENAI_API_ENDPOINT,
   OPENAI_MODEL,
   OPENAI_TEMPERATURE,
+  OPENAI_PROMPT_PATH,
   ACTUAL_API_ENDPOINT,
   ACTUAL_PASSWORD: obfuscate(ACTUAL_PASSWORD),
   ACTUAL_SYNC_ID,
@@ -175,17 +108,18 @@ const envSettings = {
   ACTUAL_DATA_DIR,
   ACTUAL_NOTE_PREFIX
 };
-logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings,{noColor: true})}`);
+logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings, { noColor: true })}`);
 
-if (INPUT_API_KEY.length < 16) {
-  logger.warn('For security reasons INPUT_API_KEY must be at least 16 characters long, /input will be disabled.');
+logger.debug(`Loading prompt from ${OPENAI_PROMPT_PATH}...`);
+try {
+  OPENAI_PROMPT = fs.readFileSync(OPENAI_PROMPT_PATH, 'utf8').trim();
+} catch (err) {
+  logger.error(`Failed to load prompt from ${OPENAI_PROMPT_PATH}. ${err}`);
+  process.exit(1);
 }
 
-// Helper to obfuscate sensitive strings.
-function obfuscate(value) {
-  if (!value) return '';
-  if (value.length <= 16) return '*'.repeat(value.length);
-  return value.substring(0, 4) + '...' + value.substring(value.length - 4);
+if (BASE_URL && INPUT_API_KEY.length < 16) {
+  logger.warn('For security reasons INPUT_API_KEY must be at least 16 characters long, /input will be disabled.');
 }
 
 // -- Initialize the Telegraf Bot --
@@ -276,6 +210,10 @@ bot.on('message', async (ctx) => {
           const payees = await Actual.getPayees();
 
           const prompt = OPENAI_PROMPT
+            .replace('%DATE%', new Date().toISOString().split('T')[0])
+            .replace('%DEFAULT_ACCOUNT%', ACTUAL_DEFAULT_ACCOUNT)
+            .replace('%DEFAULT_CATEGORY%', ACTUAL_DEFAULT_CATEGORY)
+            .replace('%CURRENCY%', ACTUAL_CURRENCY)
             .replace('%ACCOUNTS_LIST%', accounts.map(acc => acc.name).join(', '))
             .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
             .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
@@ -377,7 +315,7 @@ bot.on('message', async (ctx) => {
                 ...(tx.payee && { payee: tx.payee }),
                 ...(tx.notes && { notes: tx.notes })
               };
-              replyMessage += prettyjson.render(txInfo,{noColor: true});
+              replyMessage += prettyjson.render(txInfo, { noColor: true });
               replyMessage += '```\n';
 
               amount = parseFloat((amount * 100).toFixed(2)); // Convert to cents
@@ -421,6 +359,7 @@ bot.on('message', async (ctx) => {
               replyMessage += `added: ${added}`;
               await Actual.sync();
             }
+            logger.info(`Added ${added} transactions to Actual Budget.`);
 
             return ctx.reply(replyMessage, { parse_mode: 'Markdown' });
 
@@ -504,7 +443,7 @@ app.post('/input', (req, res) => {
     } else {
       return res.status(403).send('Forbidden');
     }
-    
+
   } catch (error) {
     logger.error('Error handling manual message:', error);
     return res.status(500).json({ error: 'Failed to handle message' });
