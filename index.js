@@ -32,6 +32,7 @@ const ACTUAL_DATA_DIR = process.env.ACTUAL_DATA_DIR || '/app/data';
 const ACTUAL_CURRENCY = process.env.ACTUAL_CURRENCY || 'EUR';
 const ACTUAL_DEFAULT_ACCOUNT = process.env.ACTUAL_DEFAULT_ACCOUNT || 'Cash';
 const ACTUAL_DEFAULT_CATEGORY = process.env.ACTUAL_DEFAULT_CATEGORY || 'Food';
+const ACTUAL_NOTE_PREFIX = process.env.ACTUAL_NOTE_PREFIX || '🤖';
 
 // -- ChatGPT --
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -46,9 +47,10 @@ You will receive a message from a user containing one or more potential transact
 - date (optional; if provided, use YYYY-MM-DD format; otherwise leave empty)
 - account (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_ACCOUNT}")
 - category (required; if not mentioned and cannot be assumed from context, use "${ACTUAL_DEFAULT_CATEGORY}")
-- payee (optional; if not mentioned, leave empty)
-- amount (required, numeric, positive or negative; if absent, skip that transaction)
-- currency (optional; if not mentioned, default to "${ACTUAL_CURRENCY}")
+- payee (optional; from the list of payees or a new one)
+- amount (required, positive or negative; if absent, skip that transaction)
+- currency (optional; for example EUR or USD)
+- exchange_rate (optional; makes sense only if currency is present)
 - notes (optional; a note about that transaction if there is additional context not fit for other fields)
 
 Use these lists to match accounts, categories, and payees:
@@ -59,7 +61,7 @@ Use these lists to match accounts, categories, and payees:
 Matching rules:
 1. If the user's text closely resembles an item in the list, use that.
 2. If no match is found for account/category, use the defaults.
-3. If no match is found for payee, treat it as a new payee.
+3. If no match is found for payee, a new payee could be defined.
 
 Additional rules:
 - The output should be a JSON array with one object per transaction.
@@ -79,7 +81,6 @@ Example output with one transaction:
     "account": "Cash",
     "category": "Food",
     "amount": -12.34,
-    "currency": "EUR",
     "notes": "Groceries for the week"
   }
 ]
@@ -90,24 +91,23 @@ Example output with multiple transactions:
     "date": "2023-01-01",
     "account": "Cash",
     "category": "Food",
-    "payee": "Supermarket",
-    "amount": -12.34,
-    "currency": "EUR",
+    "payee": "Lidl",
+    "amount": -12.34
     "notes": "Groceries for the week"
   },
   {
     "account": "Cash",
     "category": "Restaurants",
-    "payee": "Restaurant",
+    "payee": "McDonalds",
     "amount": -56.78,
-    "currency": "USD"
+    "currency": "USD",
+    "exchange_rate": 1.1,
+    "notes": "Dinner with friends"
   },
   {
     "account": "Cash",
     "category": "Income",
-    "amount": 100.00,
-    "currency": "EUR",
-    "notes": "Debt from John"
+    "amount": 1000.00
   }
 ]`;
 
@@ -151,7 +151,8 @@ const envSettings = {
   ACTUAL_CURRENCY,
   ACTUAL_DEFAULT_ACCOUNT,
   ACTUAL_DEFAULT_CATEGORY,
-  ACTUAL_DATA_DIR
+  ACTUAL_DATA_DIR,
+  ACTUAL_NOTE_PREFIX
 };
 logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings,{noColor: true})}`);
 
@@ -185,16 +186,32 @@ async function initActual() {
 
     logger.debug('Downloading budget...');
     await Actual.downloadBudget(ACTUAL_SYNC_ID);
+
+    logger.debug('Checking default account and category...');
+    let categories = await Actual.getCategories();
+    let accounts = await Actual.getAccounts();
+    let account = accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT)
+    let category = categories.find(cat => cat.name === ACTUAL_DEFAULT_CATEGORY);
+    if (!account || !category) {
+      throw new Error('Could not find default account or category, check your configuration.');
+    }
     logger.info('Successfully connected to Actual Budget.');
   } catch (error) {
     logger.error('Error connecting to Actual Budget:', error);
+    process.exit(1);
   }
 }
 
 // -- Currency Conversion --
-async function convertCurrency(amount, fromCurrency, toCurrency, apiDate) {
+async function convertCurrency(amount, fromCurrency, toCurrency, apiDate, rate = undefined) {
   if (fromCurrency.toLowerCase() === toCurrency.toLowerCase()) {
     return parseFloat(amount.toFixed(2));
+  }
+
+  if (rate !== undefined) {
+    logger.debug(`Using provided rate: ${rate} for conversion from ${fromCurrency} to ${toCurrency}`);
+    const convertedAmount = amount * rate;
+    return parseFloat(convertedAmount.toFixed(2));
   }
 
   const apiUrl = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${apiDate}/v1/currencies/${fromCurrency.toLowerCase()}.json`;
@@ -242,7 +259,7 @@ bot.on('message', async (ctx) => {
             .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
             .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
 
-          // 1) CALL THE LLM AND PARSE ITS RESPONSE
+          // CALL THE LLM AND PARSE ITS RESPONSE
           let parsedResponse = null;
           try {
             const openai = new OpenAI({
@@ -285,14 +302,18 @@ bot.on('message', async (ctx) => {
             return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.');
           }
 
-          // 2) CREATE TRANSACTIONS IN ACTUAL
+          // CREATE TRANSACTIONS IN ACTUAL
           try {
             let replyMessage = '*[TRANSACTIONS]*\n';
             let txInfo = {};
             const transactions = await Promise.all(parsedResponse.map(async (tx) => {
-              const account = accounts.find(acc => acc.name === tx.account)
-                || accounts.find(acc => acc.name === ACTUAL_DEFAULT_ACCOUNT);
-
+              if (!tx.account) {
+                tx.account = ACTUAL_DEFAULT_ACCOUNT;
+              }
+              if (!tx.category) {
+                tx.category = ACTUAL_DEFAULT_CATEGORY;
+              }
+              const account = accounts.find(acc => acc.name === tx.account);
               const category = categories.find(cat => cat.name === tx.category);
               const payee = payees.find(p => p.name === tx.payee);
 
@@ -313,7 +334,9 @@ bot.on('message', async (ctx) => {
               }
 
               if (tx.currency && tx.currency.toLowerCase() !== ACTUAL_CURRENCY.toLowerCase()) {
-                amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate);
+                amount = await convertCurrency(tx.amount, tx.currency, ACTUAL_CURRENCY, apiDate, tx.exchange_rate);
+              } else {
+                tx.currency = ACTUAL_CURRENCY;
               }
 
               // Provide human-readable output of processed transaction data
@@ -343,7 +366,7 @@ bot.on('message', async (ctx) => {
                 amount,
                 payee_name: tx.payee || null,
                 category: category.id,
-                notes: `[TGBOT] ${tx.notes || ''}`,
+                notes: `${ACTUAL_NOTE_PREFIX} ${tx.notes || ''}`,
               };
             }));
 
@@ -356,7 +379,7 @@ bot.on('message', async (ctx) => {
               return acc;
             }, {});
 
-            const results = [];
+            let added = 0;
 
             for (const [accountId, accountTxs] of Object.entries(transactionsByAccount)) {
               const transactionsText = accountTxs.map(tx =>
@@ -364,21 +387,17 @@ bot.on('message', async (ctx) => {
               ).join('\n');
               logger.info(`Importing transactions for account ${accountId}:\n${transactionsText}`);
 
-              const result = await Actual.importTransactions(accountId, accountTxs);
-              results.push(result);
+              const result = await Actual.addTransactions(accountId, accountTxs);
+              if (result) {
+                added += accountTxs.length;
+              }
             }
 
             replyMessage += '\n*[ACTUAL]*\n';
-            const totalAdded = results.reduce((sum, r) => sum + (r.added?.length || 0), 0);
-            const totalUpdated = results.reduce((sum, r) => sum + (r.updated?.length || 0), 0);
-            const totalErrors = results.reduce((sum, r) => sum + (r.errors?.length || 0), 0);
-
-            if (totalAdded > 0) replyMessage += `- Added: ${totalAdded}\n`;
-            if (totalUpdated > 0) replyMessage += `- Updated: ${totalUpdated}\n`;
-            if (totalErrors > 0) replyMessage += `- Errors: ${totalErrors}\n`;
-            if (totalAdded === 0 && totalUpdated === 0 && totalErrors === 0) {
+            if (!added) {
               replyMessage += 'no changes';
             } else {
+              replyMessage += `added: ${added}`;
               await Actual.sync();
             }
 
@@ -408,7 +427,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception thrown:', err);
-  process.exit(2);
+  process.exit(1);
 });
 
 bot.catch((err, ctx) => {
@@ -479,7 +498,7 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   startBot().catch(err => {
     logger.error('Error starting bot:', err);
-    process.exit(3);
+    process.exit(1);
   });
 });
 
@@ -500,7 +519,7 @@ async function startBot() {
       logger.debug('Polling enabled!');
     } catch (err) {
       logger.error('Error launching bot with polling:', err);
-      process.exit(3);
+      process.exit(1);
     }
   } else {
     logger.debug('Setting webhook...');
@@ -509,7 +528,7 @@ async function startBot() {
       logger.debug(`Webhook set: ${WEBHOOK_URL}/webhook`);
     } catch (err) {
       logger.error('Error setting webhook:', err);
-      process.exit(3);
+      process.exit(1);
     }
   }
 
