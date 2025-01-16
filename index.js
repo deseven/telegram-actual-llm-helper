@@ -1,5 +1,5 @@
-const { exitOnError } = require('winston');
 const {
+    VERBOSITY,
     logger, config, helpers,
     convertCurrency, prettyjson,
     InitApp, InitActual, InitBot, LaunchBot
@@ -99,7 +99,13 @@ Bot.on('message', async (ctx) => {
 
                     // CREATE TRANSACTIONS IN ACTUAL
                     try {
-                        let replyMessage = '*[TRANSACTIONS]*\n';
+                        let replyMessage;
+                        if (config.BOT_VERBOSITY === VERBOSITY.VERBOSE) {
+                            replyMessage = '*[LLM ANSWER]*\n```\n';
+                            replyMessage += prettyjson.render(parsedResponse, { noColor: true });
+                            replyMessage += '\n```\n\n';
+                        }
+                        replyMessage += '*[TRANSACTIONS]*\n';
                         let txInfo = {};
                         const transactions = await Promise.all(parsedResponse.map(async (tx) => {
                             if (!tx.account) {
@@ -137,9 +143,8 @@ Bot.on('message', async (ctx) => {
                             // Provide human-readable output of processed transaction data
                             replyMessage += '```\n';
                             let humanAmount = `${tx.amount} ${tx.currency}`;
-                            let humanConvertedAmount = '';
                             if (tx.currency && tx.currency.toLowerCase() !== config.ACTUAL_CURRENCY.toLowerCase()) {
-                                humanConvertedAmount = `${amount} ${config.ACTUAL_CURRENCY}`;
+                                humanAmount = `${amount} ${config.ACTUAL_CURRENCY}`;
                             }
 
                             txInfo = {
@@ -147,12 +152,15 @@ Bot.on('message', async (ctx) => {
                                 account: account.name,
                                 category: category.name,
                                 ...(humanAmount && { amount: humanAmount }),
-                                ...(humanConvertedAmount && { converted: humanConvertedAmount }),
                                 ...(tx.payee && { payee: tx.payee }),
                                 ...(tx.notes && { notes: tx.notes })
                             };
-                            replyMessage += prettyjson.render(txInfo, { noColor: true });
-                            replyMessage += '```\n';
+                            if (config.BOT_VERBOSITY >= VERBOSITY.NORMAL) {
+                                replyMessage += prettyjson.render(txInfo, { noColor: true });
+                                replyMessage += '```\n';
+                            } else {
+                                replyMessage = '';
+                            }
 
                             amount = parseFloat((amount * 100).toFixed(2)); // Convert to cents
                             return {
@@ -197,7 +205,9 @@ Bot.on('message', async (ctx) => {
                         }
                         logger.info(`Added ${added} transactions to Actual Budget.`);
 
-                        return ctx.reply(replyMessage, { parse_mode: 'Markdown' });
+                        if (config.BOT_VERBOSITY > VERBOSITY.SILENT) {
+                            return ctx.reply(replyMessage, { parse_mode: 'Markdown' });
+                        }
 
                     } catch (err) {
                         logger.error('Error creating transactions in Actual Budget:', err);

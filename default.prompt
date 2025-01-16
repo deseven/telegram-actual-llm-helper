@@ -10,7 +10,7 @@ You will receive a message from a user containing one or more potential transact
 - amount (required, positive or negative; if absent, skip that transaction)
 - currency (optional; for example EUR or USD)
 - exchange_rate (optional; makes sense only if currency is present)
-- notes (optional; a note about that transaction if there is additional context not fit for other fields)
+- notes (optional; a note about a transaction)
 
 Use these lists to match accounts, categories, and payees:
 - Possible accounts: %ACCOUNTS_LIST%
@@ -27,6 +27,8 @@ Additional rules:
 - If the user mentions an amount without specifying sign, you can infer from context or assume negative.
 - If you cannot extract an amount, skip that transaction.
 - If there are no valid transactions, return an empty array.
+- Do not add payee if it is not mentioned.
+- Notes could be anything that helps to understand the transaction if this information doesn't fit into other fields.
 
 **Important**: Output must be valid JSON only—no extra text, explanations, or markdown.
 
@@ -39,7 +41,7 @@ Example output with one transaction:
     "date": "2023-01-01",
     "account": "Cash",
     "category": "Food",
-    "amount": -12.34,
+    "amount": -23.90,
     "notes": "Groceries for the week"
   }
 ]
@@ -51,8 +53,8 @@ Example output with multiple transactions:
     "account": "Cash",
     "category": "Food",
     "payee": "Lidl",
-    "amount": -12.34
-    "notes": "Groceries for the week"
+    "amount": -18.34
+    "notes": "Salmon, bread, and cheese"
   },
   {
     "account": "Cash",

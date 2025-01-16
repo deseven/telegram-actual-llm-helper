@@ -7,9 +7,10 @@ const prettyjson = require('prettyjson');
 const express = require('express');
 const axios = require('axios');
 const helpers = require('./helpers');
+const { exit } = require('process');
 
 // -- Winston Logger --
-const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const logger = winston.createLogger({
     level: LOG_LEVEL,
     format: winston.format.combine(
@@ -38,8 +39,18 @@ if (!BOT_TOKEN) {
     logger.error('Missing BOT_TOKEN. Provide a correct token in the .env file.');
     process.exit(1);
 }
-
+const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
+const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 const USE_POLLING = process.env.USE_POLLING === 'true';
+
+console.log('|' + process.env.BOT_VERBOSITY + '|'); // this outputs |silent|
+const VERBOSITY = {
+    SILENT: 0,
+    MINIMAL: 1,
+    NORMAL: 2,
+    VERBOSE: 3
+};
+const BOT_VERBOSITY = VERBOSITY[process.env.BOT_VERBOSITY?.toUpperCase()] ?? VERBOSITY.NORMAL;
 
 // Validate BASE_URL only if not using polling
 let BASE_URL = '';
@@ -54,10 +65,6 @@ if (!USE_POLLING) {
 
 // Express
 const PORT = parseInt(process.env.PORT, 10) || 5007;
-
-// User IDs
-const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
-const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 
 // Intro texts
 const INTRO_DEFAULT = `This is a private bot that helps with adding transactions to Actual Budget by using ChatGPT or other LLMs.
@@ -115,26 +122,33 @@ if (INPUT_API_KEY.length < 16) {
 
 // -- Display settings on startup --
 const envSettings = {
-    BOT_TOKEN: helpers.obfuscate(BOT_TOKEN),
-    USE_POLLING,
-    BASE_URL,
-    PORT,
-    LOG_LEVEL,
-    USER_IDS,
-    INPUT_API_KEY: helpers.obfuscate(INPUT_API_KEY),
-    OPENAI_API_KEY: helpers.obfuscate(OPENAI_API_KEY),
-    OPENAI_API_ENDPOINT,
-    OPENAI_MODEL,
-    OPENAI_TEMPERATURE,
-    OPENAI_PROMPT_PATH,
-    ACTUAL_API_ENDPOINT,
-    ACTUAL_PASSWORD: helpers.obfuscate(ACTUAL_PASSWORD),
-    ACTUAL_SYNC_ID,
-    ACTUAL_CURRENCY,
-    ACTUAL_DEFAULT_ACCOUNT,
-    ACTUAL_DEFAULT_CATEGORY,
-    ACTUAL_DATA_DIR,
-    ACTUAL_NOTE_PREFIX
+    GENERAL: {
+        BOT_TOKEN: helpers.obfuscate(BOT_TOKEN),
+        USE_POLLING,
+        BASE_URL,
+        PORT,
+        LOG_LEVEL,
+        USER_IDS,
+        INPUT_API_KEY: helpers.obfuscate(INPUT_API_KEY),
+        BOT_VERBOSITY: Object.keys(VERBOSITY).find(key => VERBOSITY[key] === BOT_VERBOSITY)
+    },
+    OPEN_AI: {
+        OPENAI_API_KEY: helpers.obfuscate(OPENAI_API_KEY),
+        OPENAI_API_ENDPOINT,
+        OPENAI_MODEL,
+        OPENAI_TEMPERATURE,
+        OPENAI_PROMPT_PATH
+    },
+    ACTUAL: {
+        ACTUAL_API_ENDPOINT,
+        ACTUAL_PASSWORD: helpers.obfuscate(ACTUAL_PASSWORD),
+        ACTUAL_SYNC_ID,
+        ACTUAL_CURRENCY,
+        ACTUAL_DEFAULT_ACCOUNT,
+        ACTUAL_DEFAULT_CATEGORY,
+        ACTUAL_DATA_DIR,
+        ACTUAL_NOTE_PREFIX
+    }
 };
 logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings, { noColor: true })}`);
 
@@ -217,13 +231,13 @@ function InitActual() {
             }
             logger.info('Successfully connected to Actual Budget.');
         }).catch(error => {
-            logger.error('Error connecting to Actual Budget:', error);
+            logger.error('Error connecting to Actual Budget. ', error);
             process.exit(1);
         });
 
         return Actual;
     } catch (error) {
-        logger.error('Error connecting to Actual Budget:', error);
+        logger.error('Error connecting to Actual Budget. ', error);
         process.exit(1);
     }
 }
@@ -276,6 +290,7 @@ module.exports = {
     convertCurrency,
     helpers,
     logger,
+    VERBOSITY,
     config: {
         LOG_LEVEL,
         BOT_TOKEN,
@@ -283,6 +298,7 @@ module.exports = {
         BASE_URL,
         PORT,
         USER_IDS,
+        BOT_VERBOSITY,
         INPUT_API_KEY,
         INTRO_DEFAULT,
         INTRO,
