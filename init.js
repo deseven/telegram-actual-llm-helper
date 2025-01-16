@@ -7,7 +7,6 @@ const prettyjson = require('prettyjson');
 const express = require('express');
 const axios = require('axios');
 const helpers = require('./helpers');
-const { exit } = require('process');
 
 // -- Winston Logger --
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
@@ -156,7 +155,7 @@ const envSettings = {
         ACTUAL_NOTE_PREFIX
     }
 };
-logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings, { noColor: true })}`);
+logger.info(`=== Startup Settings ===\n${helpers.prettyjson(envSettings)}`);
 
 // All warnings only after this point for visibility
 if (INPUT_API_KEY.length < 16) {

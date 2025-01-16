@@ -8,18 +8,21 @@ const OpenAI = require('openai');
 
 logger.info('Bot is starting up...');
 
+// -- Initialize ---
 let App = InitApp();
 let Actual = InitActual();
 let Bot = InitBot();
-LaunchBot(Bot);
 
-
+// -- Start Server --
 App.listen(config.PORT, () => {
     logger.info(`Successfully started server on port ${config.PORT}.`);
 }).on('error', (err) => {
     logger.error(`Failed to start server. ${err}`);
     process.exit(1);
 });
+
+// -- Start Bot --
+LaunchBot(Bot);
 
 // -- Unified Message Handler --
 Bot.on('message', async (ctx) => {
@@ -101,7 +104,7 @@ Bot.on('message', async (ctx) => {
                         let replyMessage;
                         if (config.BOT_VERBOSITY === VERBOSITY.VERBOSE) {
                             replyMessage = '*[LLM ANSWER]*\n```\n';
-                            replyMessage += prettyjson.render(parsedResponse, { noColor: true });
+                            replyMessage += helpers.prettyjson(parsedResponse);
                             replyMessage += '\n```\n\n';
                         }
                         replyMessage += '*[TRANSACTIONS]*\n';
@@ -155,7 +158,7 @@ Bot.on('message', async (ctx) => {
                                 ...(tx.notes && { notes: tx.notes })
                             };
                             if (config.BOT_VERBOSITY >= VERBOSITY.NORMAL) {
-                                replyMessage += prettyjson.render(txInfo, { noColor: true });
+                                replyMessage += helpers.prettyjson(txInfo);
                                 replyMessage += '```\n';
                             } else {
                                 replyMessage = '';
@@ -224,6 +227,7 @@ Bot.on('message', async (ctx) => {
     }
 });
 
+// Webhook endpoint for Telegram
 App.post('/webhook', (req, res) => {
     try {
         Bot.handleUpdate(req.body);

@@ -1,8 +1,16 @@
+const _prettyjson = require('prettyjson');
+
 module.exports = {
     obfuscate,
     validateAndTrimUrl,
-    createUpdateObject
+    createUpdateObject,
+    prettyjson
 };
+
+// Helper to output a pretty JSON.
+function prettyjson(data) {
+    return _prettyjson.render(data, { noColor: true, inlineArrays: true });
+}
 
 // Helper to obfuscate sensitive strings.
 function obfuscate(value) {
