@@ -7,7 +7,7 @@ module.exports = {
 // Helper to obfuscate sensitive strings.
 function obfuscate(value) {
     if (!value) return '';
-    if (value.length <= 16) return '*'.repeat(value.length);
+    if (value.length < 16) return '*'.repeat(value.length);
     return value.substring(0, 4) + '...' + value.substring(value.length - 4);
 }
 

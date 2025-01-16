@@ -39,11 +39,16 @@ if (!BOT_TOKEN) {
     logger.error('Missing BOT_TOKEN. Provide a correct token in the .env file.');
     process.exit(1);
 }
-const USER_IDS = (process.env.USER_IDS || '999999999').split(',').map(id => parseInt(id.trim(), 10));
+
+const USER_IDS = process.env.USER_IDS ? process.env.USER_IDS.split(',').map(id => parseInt(id.trim(), 10)) : [];
+if (!USER_IDS.length) {
+    logger.error('Missing or empty USER_IDS. Provide at least one user ID in the .env file.');
+    process.exit(1);
+}
+
 const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 const USE_POLLING = process.env.USE_POLLING === 'true';
 
-console.log('|' + process.env.BOT_VERBOSITY + '|'); // this outputs |silent|
 const VERBOSITY = {
     SILENT: 0,
     MINIMAL: 1,
@@ -96,6 +101,11 @@ const OPENAI_API_ENDPOINT = process.env.OPENAI_API_ENDPOINT || 'https://api.open
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.2;
 
+if (!OPENAI_API_KEY) {
+    logger.error('Missing OpenAI API key. Provide a correct key in the .env file.');
+    process.exit(1);
+}
+
 // Loading custom prompt if available
 let OPENAI_PROMPT_PATH = './default.prompt';
 try {
@@ -116,10 +126,6 @@ try {
     process.exit(1);
 }
 
-if (INPUT_API_KEY.length < 16) {
-    logger.warn('For security reasons INPUT_API_KEY must be at least 16 characters long, /input endpoint will be disabled.');
-}
-
 // -- Display settings on startup --
 const envSettings = {
     GENERAL: {
@@ -127,7 +133,7 @@ const envSettings = {
         USE_POLLING,
         BASE_URL,
         PORT,
-        LOG_LEVEL,
+        LOG_LEVEL: LOG_LEVEL.toUpperCase(),
         USER_IDS,
         INPUT_API_KEY: helpers.obfuscate(INPUT_API_KEY),
         BOT_VERBOSITY: Object.keys(VERBOSITY).find(key => VERBOSITY[key] === BOT_VERBOSITY)
@@ -151,6 +157,11 @@ const envSettings = {
     }
 };
 logger.info(`=== Startup Settings ===\n${prettyjson.render(envSettings, { noColor: true })}`);
+
+// All warnings only after this point for visibility
+if (INPUT_API_KEY.length < 16) {
+    logger.warn('For security reasons INPUT_API_KEY must be at least 16 characters long, /input endpoint will be disabled.');
+}
 
 // -- Initialize Express App --
 function InitApp() {
