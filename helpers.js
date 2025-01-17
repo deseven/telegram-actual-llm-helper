@@ -37,7 +37,7 @@ function validateAndTrimUrl(url) {
 }
 
 // Creates a telegram update object.
-function createUpdateObject(user_id, text) {
+function createUpdateObject(user_id, userName, text) {
     const now = Math.floor(Date.now() / 1000);
     return {
         update_id: now,
@@ -46,7 +46,7 @@ function createUpdateObject(user_id, text) {
             from: {
                 id: user_id,
                 is_bot: false,
-                first_name: 'APIUser'
+                first_name: userName
             },
             chat: {
                 id: user_id,

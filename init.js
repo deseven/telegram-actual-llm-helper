@@ -48,6 +48,8 @@ if (!USER_IDS.length) {
 const INPUT_API_KEY = process.env.INPUT_API_KEY || '';
 const USE_POLLING = process.env.USE_POLLING === 'true';
 
+const INPUT_API_USER = 'InputAPIUser'; // used to build fake Telegram messages
+
 const VERBOSITY = {
     SILENT: 0,
     MINIMAL: 1,
@@ -301,6 +303,7 @@ module.exports = {
     helpers,
     logger,
     VERBOSITY,
+    INPUT_API_USER,
     config: {
         LOG_LEVEL,
         BOT_TOKEN,

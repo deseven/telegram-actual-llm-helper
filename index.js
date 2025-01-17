@@ -1,5 +1,5 @@
 const {
-    VERBOSITY,
+    VERBOSITY, INPUT_API_USER,
     logger, config, helpers,
     convertCurrency, prettyjson,
     InitApp, InitActual, InitBot, LaunchBot
@@ -29,6 +29,8 @@ Bot.on('message', async (ctx) => {
     const userId = ctx.from?.id;
     const chatType = ctx.chat?.type;
     const messageText = ctx.message.text || ctx.message.caption;
+    const userName = ctx.from?.first_name;
+    logger.warn(userName);
 
     logger.info(`Incoming message from user: ${userId}, chat type: ${chatType}`);
 
@@ -92,11 +94,11 @@ Bot.on('message', async (ctx) => {
                         }
 
                         if (parsedResponse.length === 0) {
-                            return ctx.reply('Failed to find any information to create transactions. Try again?', { reply_to_message_id: ctx.message.message_id });
+                            return ctx.reply('Failed to find any information to create transactions. Try again?', userName === INPUT_API_USER ? {} : { reply_to_message_id: ctx.message.message_id });
                         }
                     } catch (err) {
                         logger.error('Error obtaining/parsing LLM response:', err);
-                        return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
+                        return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.', userName === INPUT_API_USER ? {} : { reply_to_message_id: ctx.message.message_id });
                     }
 
                     // CREATE TRANSACTIONS IN ACTUAL
@@ -208,20 +210,20 @@ Bot.on('message', async (ctx) => {
                         logger.info(`Added ${added} transactions to Actual Budget.`);
 
                         if (config.BOT_VERBOSITY > VERBOSITY.SILENT) {
-                            return ctx.reply(replyMessage, { parse_mode: 'Markdown', reply_to_message_id: ctx.message.message_id });
+                            return ctx.reply(replyMessage, { parse_mode: 'Markdown', ...(userName !== INPUT_API_USER && { reply_to_message_id: ctx.message.message_id }) });
                         }
 
                     } catch (err) {
                         logger.error('Error creating transactions in Actual Budget:', err);
 
                         if (err.message && err.message.includes('convert currency')) {
-                            return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
+                            return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.', userName === INPUT_API_USER ? {} : { reply_to_message_id: ctx.message.message_id });
                         }
-                        return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
+                        return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.', userName === INPUT_API_USER ? {} : { reply_to_message_id: ctx.message.message_id });
                     }
                 }
             } else {
-                return ctx.reply(INTRO_DEFAULT, { reply_to_message_id: ctx.message.message_id });
+                return ctx.reply(INTRO_DEFAULT, userName === INPUT_API_USER ? {} : { reply_to_message_id: ctx.message.message_id });
             }
         }
     }
@@ -254,7 +256,7 @@ App.post('/input', (req, res) => {
         const { user_id, text } = req.body;
 
         if (config.USER_IDS.includes(user_id)) {
-            Bot.handleUpdate(helpers.createUpdateObject(user_id, text));
+            Bot.handleUpdate(helpers.createUpdateObject(user_id, INPUT_API_USER, text));
             logger.debug('Custom input request handled successfully.');
             return res.json({ status: 'OK' });
         } else {
