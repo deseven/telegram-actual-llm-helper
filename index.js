@@ -1,9 +1,9 @@
 const {
     VERBOSITY, INPUT_API_USER,
     logger, config, helpers,
-    convertCurrency, prettyjson,
+    convertCurrency,
     InitApp, InitActual, InitBot, LaunchBot
-} = require('./init');
+} = require('./common/init');
 const OpenAI = require('openai');
 
 logger.info('Bot is starting up...');
@@ -56,7 +56,8 @@ Bot.on('message', async (ctx) => {
                         .replace('%CURRENCY%', config.ACTUAL_CURRENCY)
                         .replace('%ACCOUNTS_LIST%', accounts.map(acc => acc.name).join(', '))
                         .replace('%CATEGORY_LIST%', categories.map(cat => cat.name).join(', '))
-                        .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '));
+                        .replace('%PAYEE_LIST%', payees.map(payee => payee.name).join(', '))
+                        .replace('%RULES%', config.OPENAI_RULES.join('\n'));
 
                     // CALL THE LLM AND PARSE ITS RESPONSE
                     let parsedResponse = null;

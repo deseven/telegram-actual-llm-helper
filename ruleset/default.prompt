@@ -23,12 +23,7 @@ Matching rules:
 3. If no match is found for payee, a new payee could be defined.
 
 Additional rules:
-- The output should be a JSON array with one object per transaction.
-- If the user mentions an amount without specifying sign, you can infer from context or assume negative.
-- If you cannot extract an amount, skip that transaction.
-- If there are no valid transactions, return an empty array.
-- Do not add payee if it is not mentioned.
-- Notes could be anything that helps to understand the transaction if this information doesn't fit into other fields.
+%RULES%
 
 **Important**: Output must be valid JSON only — no extra text, explanations, or markdown.
 

@@ -108,11 +108,11 @@ if (!OPENAI_API_KEY) {
 }
 
 // Loading custom prompt if available
-let OPENAI_PROMPT_PATH = './default.prompt';
+let OPENAI_PROMPT_PATH = './ruleset/default.prompt';
 try {
-    const customPath = './custom.prompt';
-    if (fs.existsSync(customPath) && fs.statSync(customPath).size > 0) {
-        OPENAI_PROMPT_PATH = customPath;
+    const customPromptPath = './ruleset/custom.prompt';
+    if (fs.existsSync(customPromptPath) && fs.statSync(customPromptPath).size > 0) {
+        OPENAI_PROMPT_PATH = customPromptPath;
     }
 } catch (error) {
     logger.error('Error checking for custom prompt file:', error);
@@ -124,6 +124,30 @@ try {
     OPENAI_PROMPT = fs.readFileSync(OPENAI_PROMPT_PATH, 'utf8').trim();
 } catch (err) {
     logger.error(`Failed to load prompt from ${OPENAI_PROMPT_PATH}.`, err);
+    process.exit(1);
+}
+
+// Loading custom rules if available
+let OPENAI_RULES_PATH = './ruleset/default.rules';
+try {
+    const customRulesPath = './ruleset/custom.rules';
+    if (fs.existsSync(customRulesPath) && fs.statSync(customRulesPath).size > 0) {
+        OPENAI_RULES_PATH = customRulesPath;
+    }
+} catch (error) {
+    logger.error('Error checking for custom rules file:', error);
+    process.exit(1);
+}
+
+let OPENAI_RULES = [];
+try {
+    const rulesContent = fs.readFileSync(OPENAI_RULES_PATH, 'utf8');
+    OPENAI_RULES = rulesContent
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#'));
+} catch (err) {
+    logger.error(`Failed to load rules from ${OPENAI_RULES_PATH}.`, err);
     process.exit(1);
 }
 
@@ -144,7 +168,8 @@ const envSettings = {
         OPENAI_API_ENDPOINT,
         OPENAI_MODEL,
         OPENAI_TEMPERATURE,
-        OPENAI_PROMPT_PATH
+        OPENAI_PROMPT_PATH,
+        OPENAI_RULES_PATH
     },
     ACTUAL: {
         ACTUAL_API_ENDPOINT,
@@ -298,7 +323,6 @@ module.exports = {
     InitBot,
     LaunchBot,
     InitActual,
-    prettyjson,
     convertCurrency,
     helpers,
     logger,
@@ -329,5 +353,6 @@ module.exports = {
         OPENAI_TEMPERATURE,
         OPENAI_PROMPT_PATH,
         OPENAI_PROMPT,
+        OPENAI_RULES
     },
 };

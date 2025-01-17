@@ -25,7 +25,7 @@ A bot designed to assist with logging expenses and deposits in [Actual Budget](h
 7. Run `npm run start`.
 
 #### Tests (optional, would only work if you have `INPUT_API_KEY` set up)
-8. Run `./run-tests.sh`, check the script's contents to see what it does.
+8. Run `tests/run-tests.sh`, check the script's contents to see what it does.
 
 ## Usage
 #### General
@@ -50,8 +50,8 @@ curl -X POST \
 ```
 The bot will process the message as if it was sent from Telegram and will send the response back to the user using the provided `user_id`. The user ID must be one of those defined in the `USER_IDS` variable. This was mostly done to circumvent iOS Shortcuts limitations, but could be used for other purposes as well.
 
-#### Custom Prompt
-If you want to use a custom prompt, copy `default.prompt` to `custom.prompt` and modify it as needed. The bot will automatically pick it up and use it instead of the default one.
+#### Custom Prompt & Rules
+If you want to use a custom prompt, copy `ruleset/default.prompt` to `ruleset/custom.prompt` and modify it as needed. The bot will automatically pick it up and use it instead of the default one.
 Variables list:
 - `%DATE` - current date at the time of request
 - `%DEFAULT_ACCOUNT%` - default Actual account name from `.env`
@@ -60,6 +60,9 @@ Variables list:
 - `%ACCOUNTS_LIST%` - list of all accounts from Actual at the time of request
 - `%CATEGORY_LIST%` - list of all categories from Actual at the time of request
 - `%PAYEE_LIST%` - list of all payees from Actual at the time of request
+- `%RULES%` - list of rules from `ruleset/default.rules` or `ruleset/custom.rules` if it exists
+
+It's pretty much the same for rules, copy `ruleset/default.rules` to `ruleset/custom.rules` and modify it as needed.
 
 ## Contributing
 Contributions are welcome! Feel free to open an issue or submit a pull request.

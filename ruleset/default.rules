@@ -1,0 +1,17 @@
+# We always need a JSON array
+- The output should be a JSON array with one object per transaction.
+
+# Positive transaction is deposit, negative is payment
+- If the user mentions an amount without specifying sign, you can infer from context or assume negative.
+
+# Not creating transactions without amount
+- If you cannot extract an amount, skip that transaction.
+
+# Not having any transactions should still return a valid JSON
+- If there are no valid transactions, return an empty array.
+
+# To prevent creating unwanted payees
+- Do not add payee if it is not mentioned.
+
+# Notes are totally optional, but useful
+- Notes could be anything that helps to understand the transaction if this information doesn't fit into other fields.
