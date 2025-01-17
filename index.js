@@ -92,16 +92,16 @@ Bot.on('message', async (ctx) => {
                         }
 
                         if (parsedResponse.length === 0) {
-                            return ctx.reply('Failed to find any information to create transactions. Try again?');
+                            return ctx.reply('Failed to find any information to create transactions. Try again?', { reply_to_message_id: ctx.message.message_id });
                         }
                     } catch (err) {
                         logger.error('Error obtaining/parsing LLM response:', err);
-                        return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.');
+                        return ctx.reply('Sorry, I received an invalid or empty response from the LLM. Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
                     }
 
                     // CREATE TRANSACTIONS IN ACTUAL
                     try {
-                        let replyMessage;
+                        let replyMessage = '';
                         if (config.BOT_VERBOSITY === VERBOSITY.VERBOSE) {
                             replyMessage = '*[LLM ANSWER]*\n```\n';
                             replyMessage += helpers.prettyjson(parsedResponse);
@@ -208,20 +208,20 @@ Bot.on('message', async (ctx) => {
                         logger.info(`Added ${added} transactions to Actual Budget.`);
 
                         if (config.BOT_VERBOSITY > VERBOSITY.SILENT) {
-                            return ctx.reply(replyMessage, { parse_mode: 'Markdown' });
+                            return ctx.reply(replyMessage, { parse_mode: 'Markdown', reply_to_message_id: ctx.message.message_id });
                         }
 
                     } catch (err) {
                         logger.error('Error creating transactions in Actual Budget:', err);
 
                         if (err.message && err.message.includes('convert currency')) {
-                            return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.');
+                            return ctx.reply('Sorry, there was an error converting the currency. Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
                         }
-                        return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.');
+                        return ctx.reply('Sorry, I encountered an error creating the transaction(s). Check the bot logs.', { reply_to_message_id: ctx.message.message_id });
                     }
                 }
             } else {
-                return ctx.reply(INTRO_DEFAULT);
+                return ctx.reply(INTRO_DEFAULT, { reply_to_message_id: ctx.message.message_id });
             }
         }
     }

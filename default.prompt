@@ -30,7 +30,7 @@ Additional rules:
 - Do not add payee if it is not mentioned.
 - Notes could be anything that helps to understand the transaction if this information doesn't fit into other fields.
 
-**Important**: Output must be valid JSON only—no extra text, explanations, or markdown.
+**Important**: Output must be valid JSON only — no extra text, explanations, or markdown.
 
 Example output with no transactions:
 []
